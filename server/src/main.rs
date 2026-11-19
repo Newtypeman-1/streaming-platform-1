@@ -13,7 +13,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let database_url = env::var("DATABASE_URL").map_err(|_| "DATABASE_URL 환경변수가 필요합니다")?;
-    let port: u16 = env::var("SERVER_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8080);
+    let port: u16 = env::var("SERVER_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8000);
     let storage_dir = env::var("VIDEO_STORAGE_DIR").unwrap_or_else(|_| "storage/videos".into());
 
     let state = AppState::connect(&database_url, &storage_dir).await?;

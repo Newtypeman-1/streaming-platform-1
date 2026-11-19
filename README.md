@@ -85,7 +85,7 @@ cp .env.example .env
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` | DB 계정 | `streaming` / `change-me` |
 | `POSTGRES_PORT` | 호스트에 열 PostgreSQL 포트 | `5432` |
 | `DATABASE_URL` | 서버가 접속할 DB 주소 | `postgres://streaming:change-me@localhost:5432/streaming` |
-| `SERVER_PORT` | API 서버 포트 | `8080` |
+| `SERVER_PORT` | API 서버 포트 | `8000` |
 | `VIDEO_STORAGE_DIR` | 영상 저장 디렉터리 (상대경로는 실행 위치 기준) | `storage/videos` |
 
 서버는 실행 위치부터 상위 폴더로 올라가며 `.env`를 찾아 읽습니다. 그래서 따로 `export`하지 않아도 됩니다.
@@ -98,7 +98,7 @@ cp .env.example .env
 docker compose up -d
 ```
 
-### 3) API 서버 실행 (기본 http://localhost:8080)
+### 3) API 서버 실행 (기본 http://localhost:8000)
 
 프로젝트 루트에서 실행합니다. DB 테이블은 서버가 뜰 때 마이그레이션으로 자동 생성됩니다.
 
@@ -108,7 +108,7 @@ cargo run -p server
 
 ### 4) 웹 실행 (http://localhost:3000)
 
-`dx serve`의 기본 포트가 8080이라 API 서버와 겹치지 않도록 3000번을 지정합니다.
+`dx serve`의 기본 포트(8080)는 다른 프로그램과 자주 겹쳐서 3000번을 지정합니다.
 
 ```bash
 cd web && dx serve --port 3000
