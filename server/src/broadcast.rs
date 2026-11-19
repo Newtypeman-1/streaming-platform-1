@@ -10,6 +10,8 @@ pub enum BroadcastError {
     TitleTooLong,
     #[error("영상 파일만 등록할 수 있습니다.")]
     NotAVideo,
+    #[error("영상 파일이 비어 있습니다.")]
+    EmptyVideo,
 }
 
 /// 제목 규칙: 앞뒤 공백 제거, 비어있지 않을 것, 100자(글자 수 기준) 이하.
