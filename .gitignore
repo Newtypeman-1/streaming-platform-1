@@ -1,0 +1,12 @@
+# 로컬 환경변수 / 업로드 영상
+.env
+storage/
+
+# Rust / Dioxus 빌드 결과
+target/
+web/dist/
+web/.dioxus/
+
+.DS_Store
+.idea/
+.vscode/
