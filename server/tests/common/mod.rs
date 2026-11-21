@@ -24,11 +24,23 @@ pub struct TestApp {
 }
 
 pub async fn app() -> TestApp {
-    let db = Postgres::default().with_tag("17").start().await.unwrap();
+    let db = start_postgres().await;
     let storage_dir = tempfile::tempdir().unwrap();
     let media = FakeMedia::start().await;
     let state = AppState::connect(&db_url(&db).await, storage_dir.path(), media.server()).await.unwrap();
     TestApp { router: router(state.clone()), state, storage_dir, media, db }
+}
+
+/// 테스트마다 컨테이너를 띄우므로 수십 개가 동시에 뜬다. 그러면 가끔 Docker 가 포트를 연결하지 못한
+/// 컨테이너(`PortNotExposed`)가 생긴다. 그런 컨테이너는 버리고 새로 띄운다.
+async fn start_postgres() -> ContainerAsync<Postgres> {
+    for _ in 0..3 {
+        let db = Postgres::default().with_tag("17").start().await.unwrap();
+        if db.get_host_port_ipv4(5432).await.is_ok() {
+            return db;
+        }
+    }
+    panic!("PostgreSQL 테스트 컨테이너의 포트를 열지 못했습니다");
 }
 
 pub async fn db_url(db: &ContainerAsync<Postgres>) -> String {
