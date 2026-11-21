@@ -141,6 +141,18 @@ async fn 결제_서비스가_승인을_거절하면_실패로_기록하고_사�
 }
 
 #[tokio::test]
+async fn 승인이_거절되어도_결제_서비스에_조회해_이미_승인된_결제면_확정한다() {
+    let (app, broadcast, viewer) = setup().await;
+    let order = order(&app, &viewer, broadcast.id, 5000).await;
+    // 첫 승인 응답이 끊긴 뒤 다시 확인한 상황: 결제 서비스는 이미 승인했고, 다시 승인하면 거절한다
+    toss_approved(&app, "pay_1", &order.order_id, 5000);
+    *app.toss.reject.lock().unwrap() = Some((400, "ALREADY_PROCESSED_PAYMENT".into()));
+    let (status, body) = confirm(&app, &viewer, "pay_1", &order.order_id, 5000).await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    assert_eq!(order_status(&app, &order.order_id).await, DonationStatus::Done);
+}
+
+#[tokio::test]
 async fn 결제_서비스에_연결하지_못하면_502_이고_결제_대기로_남긴다() {
     let (mut app, broadcast, viewer) = setup().await;
     let order = order(&app, &viewer, broadcast.id, 5000).await;

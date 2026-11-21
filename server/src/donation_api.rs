@@ -148,7 +148,14 @@ async fn confirm(
     }
     let payment = match state.payments.confirm(&req.payment_key, &model.order_id, model.amount).await {
         Ok(payment) => payment,
-        Err(PaymentError::Rejected { message, .. }) => return Err(fail(&state, &model, DonationError::Rejected(message)).await),
+        // 앞선 승인 응답만 끊겼을 수 있으므로 거절이어도 결제 서비스에 조회해 승인 여부를 확인한다
+        Err(PaymentError::Rejected { message, .. }) => match state.payments.find(&req.payment_key).await {
+            Ok(payment) if payment.status == "DONE" => payment,
+            Ok(_) | Err(PaymentError::Rejected { .. }) => {
+                return Err(fail(&state, &model, DonationError::Rejected(message)).await);
+            }
+            Err(e) => return Err(e.into()),
+        },
         // 연결 실패는 승인됐는지 알 수 없으므로 결제 대기로 둔다
         Err(e) => return Err(e.into()),
     };
