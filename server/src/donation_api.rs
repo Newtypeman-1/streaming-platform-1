@@ -6,6 +6,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
 use chrono::Utc;
+use serde::Deserialize;
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
 use shared::{ConfirmDonationRequest, DonationOrderResponse, FailDonationRequest, DonationRequest, DonationStatus};
 
@@ -22,6 +23,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/broadcasts/{id}/donations", post(order))
         .route("/api/donations/confirm", post(confirm))
         .route("/api/donations/{order_id}/fail", post(record_failure))
+        .route("/api/payments/webhook", post(webhook))
 }
 
 fn order_response(state: &AppState, model: donation::Model, recipient: user::Model) -> DonationOrderResponse {
@@ -180,4 +182,53 @@ async fn record_failure(
     let status = if req.code == "PAY_PROCESS_CANCELED" { DonationStatus::Canceled } else { DonationStatus::Failed };
     mark_ended(&state, &model, status, &req.message.unwrap_or(req.code)).await?;
     order_json(&state, find_order(&state, &order_id).await?).await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WebhookEvent {
+    event_type: String,
+    /// PAYMENT_STATUS_CHANGED 이면 결제 객체
+    data: serde_json::Value,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WebhookPayment {
+    payment_key: String,
+    order_id: String,
+}
+
+/// 결제 서비스의 결제 상태 변경 통지(웹훅). 승인 응답이 이 서버에 오기 전에 끊겨도 통지로 확정한다.
+/// 처리할 것이 없는 통지에도 200 을 준다. 200 이 아니면 결제 서비스가 통지를 다시 보낸다.
+async fn webhook(State(state): State<AppState>, JsonBody(event): JsonBody<WebhookEvent>) -> Result<StatusCode, AppError> {
+    if event.event_type != "PAYMENT_STATUS_CHANGED" {
+        return Ok(StatusCode::OK);
+    }
+    let data: WebhookPayment = serde_json::from_value(event.data)
+        .map_err(|_| AppError::BadRequest("결제 통지 형식이 올바르지 않습니다.".into()))?;
+    let Some(model) = donation::Entity::find().filter(donation::Column::OrderId.eq(&data.order_id)).one(&state.db).await? else {
+        return Ok(StatusCode::OK);
+    };
+    // 통지에는 서명이 없으므로 내용을 믿지 않고 결제 서비스에 직접 조회한다
+    let payment = match state.payments.find(&data.payment_key).await {
+        Ok(payment) => payment,
+        Err(PaymentError::Rejected { message, .. }) => {
+            return Err(AppError::BadRequest(format!("결제를 확인할 수 없습니다: {message}")));
+        }
+        // 결제 서비스는 200 을 받지 못하면 통지를 다시 보낸다
+        Err(e) => return Err(e.into()),
+    };
+    // 승인 전 단계의 통지는 확정할 것이 없다
+    if payment.status != "DONE" {
+        return Ok(StatusCode::OK);
+    }
+    if let Err(e) = verify_payment(&model.order_id, model.amount, &payment) {
+        // 다시 받아도 결과가 같으므로 실패로 기록하고 통지는 받았다고 응답한다
+        tracing::error!("통지된 결제가 주문과 다름: {model:?} {payment:?}");
+        mark_ended(&state, &model, DonationStatus::Failed, &e.to_string()).await?;
+        return Ok(StatusCode::OK);
+    }
+    mark_done(&state, model, &payment.payment_key).await?;
+    Ok(StatusCode::OK)
 }

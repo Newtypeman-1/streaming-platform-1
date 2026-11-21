@@ -2,7 +2,7 @@ mod common;
 
 use axum::http::StatusCode;
 use common::{TestApp, app, json, with_cookie};
-use shared::{BroadcastResponse, DONATION_CONFIRM_URL, DonationOrderResponse, DonationStatus, ErrorResponse, donation_fail_url, donations_url};
+use shared::{BroadcastResponse, DONATION_CONFIRM_URL, DonationOrderResponse, DonationStatus, ErrorResponse, PAYMENT_WEBHOOK_URL, donation_fail_url, donations_url};
 
 /// 방송자(owner)의 녹화 방송 하나와 후원할 시청자(viewer) 로그인 쿠키
 async fn setup() -> (TestApp, BroadcastResponse, String) {
@@ -248,5 +248,96 @@ async fn 주문_뒤_방송이_지워졌으면_승인을_요청하지_않는다()
     let (status, _) = confirm(&app, &viewer, "pay_1", &order.order_id, 5000).await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(app.toss.confirms(), 0);
+    assert_eq!(order_status(&app, &order.order_id).await, DonationStatus::Failed);
+}
+
+/// 결제 서비스가 승인을 마쳤다고 기록해 둔다 (승인 응답이 이 서버에 오기 전에 끊긴 상황)
+fn toss_approved(app: &TestApp, payment_key: &str, order_id: &str, amount: i64) {
+    app.toss.payments.lock().unwrap().insert(
+        payment_key.to_string(),
+        serde_json::json!({ "paymentKey": payment_key, "orderId": order_id, "status": "DONE", "totalAmount": amount }),
+    );
+}
+
+/// 결제 상태 변경 통지(PAYMENT_STATUS_CHANGED). data 는 결제 객체다.
+async fn notify(app: &TestApp, payment_key: &str, order_id: &str, amount: i64) -> StatusCode {
+    let body = serde_json::json!({
+        "eventType": "PAYMENT_STATUS_CHANGED",
+        "createdAt": "2026-11-21T12:00:01.000000",
+        "data": { "paymentKey": payment_key, "orderId": order_id, "status": "DONE", "totalAmount": amount },
+    });
+    app.send(json("POST", PAYMENT_WEBHOOK_URL, body)).await.0
+}
+
+#[tokio::test]
+async fn 승인_통지를_받으면_결제_서비스에_조회해_확정한다() {
+    let (app, broadcast, viewer) = setup().await;
+    let order = order(&app, &viewer, broadcast.id, 5000).await;
+    toss_approved(&app, "pay_1", &order.order_id, 5000);
+    assert_eq!(notify(&app, "pay_1", &order.order_id, 5000).await, StatusCode::OK);
+    assert_eq!(order_status(&app, &order.order_id).await, DonationStatus::Done);
+}
+
+/// 방송의 확정된 후원 (건수, 합계)와 그 주문의 승인 시각
+async fn done_rows(app: &TestApp, order_id: &str) -> (usize, i64, Option<String>) {
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+    use server::entity::donation;
+    let done = donation::Entity::find().filter(donation::Column::Status.eq("done")).all(&app.state.db).await.unwrap();
+    let approved = done.iter().find(|d| d.order_id == order_id).and_then(|d| d.approved_at).map(|t| t.to_rfc3339());
+    (done.len(), done.iter().map(|d| d.amount).sum(), approved)
+}
+
+#[tokio::test]
+async fn 같은_승인_통지가_반복되어도_한_번만_적립한다() {
+    let (app, broadcast, viewer) = setup().await;
+    let order = order(&app, &viewer, broadcast.id, 5000).await;
+    let (status, _) = confirm(&app, &viewer, "pay_1", &order.order_id, 5000).await;
+    assert_eq!(status, StatusCode::OK);
+    let before = done_rows(&app, &order.order_id).await;
+    assert_eq!((before.0, before.1), (1, 5000));
+
+    for _ in 0..3 {
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        assert_eq!(notify(&app, "pay_1", &order.order_id, 5000).await, StatusCode::OK);
+    }
+    assert_eq!(done_rows(&app, &order.order_id).await, before);
+}
+
+#[tokio::test]
+async fn 결제_서비스에_없는_결제의_통지는_확정하지_않는다() {
+    let (app, broadcast, viewer) = setup().await;
+    let order = order(&app, &viewer, broadcast.id, 5000).await;
+    // 누구나 보낼 수 있는 주소라 통지 내용만으로는 믿지 않는다
+    assert_eq!(notify(&app, "forged", &order.order_id, 5000).await, StatusCode::BAD_REQUEST);
+    assert_eq!(order_status(&app, &order.order_id).await, DonationStatus::Pending);
+}
+
+#[tokio::test]
+async fn 이_서버의_주문이_아니거나_다른_종류의_통지는_무시하고_200() {
+    let (app, _, _) = setup().await;
+    // 200 이 아니면 결제 서비스가 통지를 계속 다시 보낸다
+    assert_eq!(notify(&app, "pay_x", "unknown-order", 5000).await, StatusCode::OK);
+    let other = serde_json::json!({ "eventType": "DEPOSIT_CALLBACK", "createdAt": "2026-11-21T12:00:01", "data": {} });
+    assert_eq!(app.send(json("POST", PAYMENT_WEBHOOK_URL, other)).await.0, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn 조회한_결제가_승인_완료가_아니면_결제_대기로_둔다() {
+    let (app, broadcast, viewer) = setup().await;
+    let order = order(&app, &viewer, broadcast.id, 5000).await;
+    app.toss.payments.lock().unwrap().insert(
+        "pay_1".into(),
+        serde_json::json!({ "paymentKey": "pay_1", "orderId": order.order_id, "status": "IN_PROGRESS", "totalAmount": 5000 }),
+    );
+    assert_eq!(notify(&app, "pay_1", &order.order_id, 5000).await, StatusCode::OK);
+    assert_eq!(order_status(&app, &order.order_id).await, DonationStatus::Pending);
+}
+
+#[tokio::test]
+async fn 조회한_결제_금액이_주문과_다르면_실패로_기록하고_200() {
+    let (app, broadcast, viewer) = setup().await;
+    let order = order(&app, &viewer, broadcast.id, 5000).await;
+    toss_approved(&app, "pay_1", &order.order_id, 100);
+    assert_eq!(notify(&app, "pay_1", &order.order_id, 5000).await, StatusCode::OK);
     assert_eq!(order_status(&app, &order.order_id).await, DonationStatus::Failed);
 }

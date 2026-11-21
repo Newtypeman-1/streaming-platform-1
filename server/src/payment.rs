@@ -69,6 +69,11 @@ impl PaymentGateway {
         self.send(req).await
     }
 
+    /// 결제 조회. 통지(웹훅) 내용은 서명이 없으므로 이 조회 결과로 확인한다.
+    pub async fn find(&self, payment_key: &str) -> Result<Payment, PaymentError> {
+        self.send(self.http.get(format!("{}/v1/payments/{payment_key}", self.api_url))).await
+    }
+
     /// 시크릿 키 Basic 인증(`시크릿키:` 의 Base64)으로 보내고 결제 객체를 받는다.
     async fn send(&self, req: reqwest::RequestBuilder) -> Result<Payment, PaymentError> {
         let res = req.basic_auth(&self.secret_key, None::<&str>).send().await?;

@@ -209,3 +209,6 @@ pub const DONATION_CONFIRM_URL: &str = "/api/donations/confirm";
 pub fn donation_fail_url(order_id: &str) -> String {
     format!("/api/donations/{order_id}/fail")
 }
+
+/// 결제 서비스가 보내는 결제 상태 변경 통지(웹훅)
+pub const PAYMENT_WEBHOOK_URL: &str = "/api/payments/webhook";
