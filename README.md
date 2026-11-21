@@ -10,6 +10,8 @@
 | 프론트엔드 | Dioxus 0.7 (웹, WASM) |
 | 라이브 | 브라우저 WebRTC (WHIP 송출 / WHEP 시청), MediaMTX 1.21 |
 | 결제 | 토스페이먼츠 주문서형 결제(SDK v2)·결제 API (테스트 키) |
+| 배포(로컬) | Docker 이미지, kind(Kubernetes), HPA + metrics-server |
+| 부하 | k6 (Docker) |
 | 테스트 | cargo test, Testcontainers(PostgreSQL) |
 
 ```
@@ -20,6 +22,8 @@
 ├── docker-compose.yml  로컬 PostgreSQL, MediaMTX(라이브 중계), Caddy(휴대폰용 HTTPS)
 ├── mediamtx.yml        MediaMTX 설정
 ├── Caddyfile           휴대폰용 HTTPS 프록시 설정
+├── Dockerfile          API 서버 컨테이너 이미지
+├── deploy/             로컬 Kubernetes 클러스터(kind)·HPA 설정, 부하·확인 스크립트
 ├── .env.example        환경변수 예시
 └── storage/videos/     업로드된 영상 저장 위치 (git 제외, 실행 시 자동 생성)
 ```
@@ -257,6 +261,63 @@
 
 `status`는 `pending`(결제 대기) · `done`(확정) · `failed`(실패) · `canceled`(취소)입니다.
 
+## 5단계: 여러 인스턴스와 자동 스케일링
+
+### 구현 범위
+
+- **컨테이너 이미지**: 저장소 루트의 `Dockerfile`로 API 서버 이미지를 만듭니다(`docker build -t nadri-server:local .`). 빌드 도구 없이 실행 파일과 인증서만 담고, 일반 사용자로 실행합니다.
+- **여러 인스턴스 실행**: 로컬 Kubernetes 클러스터(kind, 노드 3개)에서 서버를 Deployment로 띄웁니다. 기본 2개이고 인스턴스는 노드에 고르게 나뉩니다.
+- **요청 분산**: Service(NodePort)가 준비된 인스턴스로 요청을 나눠 보냅니다. kind가 이 Service를 이 컴퓨터의 `localhost:8000`으로 열어 주므로 웹 개발 서버의 `/api` 프록시를 바꾸지 않아도 됩니다.
+- **자동 스케일 아웃·인**: HPA가 CPU 사용률(요청량 100m 대비)을 보고 **2~8개** 사이에서 인스턴스 수를 조절합니다. 평균 50%를 넘으면 바로 늘리고(15초마다 최대 2배), 1분 동안 계속 낮으면 30초마다 최대 2개씩 줄입니다.
+- **상태 확인 API**: `GET /api/health`가 DB에 닿으면 `200`, 아니면 `503`입니다. Kubernetes가 이것으로 요청을 보낼 인스턴스(readiness)와 다시 띄울 인스턴스(liveness)를 고릅니다.
+- **스케일 인 중 요청 보호**: 인스턴스는 종료 신호(SIGTERM)를 받으면 새 연결을 받지 않고 처리 중인 요청에 응답한 뒤 끝납니다. Service 목록에서 빠지는 동안 들어오는 요청도 받도록 종료 전에 5초 기다립니다.
+- **동시 기동**: 빈 DB에 인스턴스 여러 개가 한꺼번에 떠도 DB 잠금(advisory lock)으로 마이그레이션을 하나씩 적용하므로 기동에 실패하지 않습니다.
+- **응답한 인스턴스 표시**: 모든 응답에 `X-Instance` 헤더로 처리한 인스턴스(Pod) 이름이 붙습니다.
+- **부하·확인 스크립트**: `deploy/load.sh`(k6), `deploy/watch.sh`(인스턴스 수·CPU), `deploy/check.sh`(로그인·목록·댓글·영상 유지 확인)
+
+**이번 단계에서 하지 않는 것:** 클라우드 배포, 웹 화면(WASM)의 컨테이너화, PostgreSQL·MediaMTX 자체의 다중화, 요청 수 기반 스케일링, 영상의 오브젝트 스토리지 이전, 실시간(WebSocket) 기능
+
+### 구성
+
+```
+브라우저 / 웹 개발 서버(3300, /api 프록시)          k6 부하(Docker, kind 네트워크)
+        │ localhost:8000                                   │ nadri-control-plane:30800
+        ▼                                                  ▼
+┌──────────────────────── kind 클러스터 (노드 3개) ────────────────────────┐
+│  Service nadri-server (NodePort 30800) ── 준비된 Pod 으로 요청 분산       │
+│     ├─ Pod nadri-server-…  ┐                                              │
+│     ├─ Pod nadri-server-…  ├─ HPA: CPU 50% 기준 2~8개 (metrics-server)    │
+│     └─ … (최대 8)           ┘                                              │
+│  모든 노드의 /nadri/videos ── 저장소의 storage/videos (공유 디렉터리)       │
+└──────────────────────────────────────────────────────────────────────────┘
+        │ host.docker.internal
+        ▼
+ docker compose: PostgreSQL(5432) · MediaMTX(8889 신호, 9997 API, 8189 영상)
+```
+
+### 상태를 두는 곳
+
+인스턴스는 상태를 갖지 않습니다. 어느 인스턴스가 요청을 받아도, 인스턴스가 늘거나 사라져도 결과가 같습니다.
+
+| 상태 | 저장 위치 |
+| --- | --- |
+| 로그인 세션 | PostgreSQL `session` (쿠키에는 토큰만, DB에는 그 해시) |
+| 방송 목록·라이브 상태·송출 키 | PostgreSQL `broadcast` |
+| 댓글 | PostgreSQL `comment` |
+| 후원 주문·결제 상태 | PostgreSQL `donation` |
+| 업로드 영상 파일 | 모든 노드가 함께 보는 디렉터리(`storage/videos` → Pod 의 `/data/videos`) |
+| 라이브 영상 중계 | MediaMTX (모든 인스턴스가 같은 MediaMTX에 신호를 보냄) |
+
+끊긴 라이브를 종료하는 확인 작업은 인스턴스마다 5초마다 돕니다. 여러 인스턴스가 함께 돌아도 결과는 "송출이 없는 라이브를 `ended`로" 같은 갱신이라 겹쳐도 문제가 없습니다.
+
+### API (추가)
+
+| Method | Path | 로그인 | 설명 |
+| --- | --- | --- | --- |
+| `GET` | `/api/health` | - | 상태 확인. DB에 닿으면 `200`(본문 없음), 닿지 않거나 2초 안에 응답이 없으면 `503` |
+
+모든 응답에 `X-Instance: <인스턴스 이름>` 헤더가 붙습니다.
+
 ## 실행 방법
 
 ### 준비물
@@ -298,6 +359,7 @@ cp .env.example .env
 | `TOSS_SECRET_KEY` | 토스페이먼츠 주문서형, 결제창형 연동 **테스트 시크릿 키** (서버만 사용, 외부 노출 금지) | `test_gsk_...` |
 | `TOSS_API_URL` | 결제 API 주소 | `https://api.tosspayments.com` |
 | `TOSS_TEST_CODE` | (선택) 결제 승인 실패 재현용 오류 코드. 평소엔 비워 둡니다 | `INVALID_REJECT_CARD` |
+| `INSTANCE_NAME` | (선택) 응답의 `X-Instance` 헤더에 넣을 인스턴스 이름. 없으면 `HOSTNAME`(컨테이너에서는 Pod 이름), 그것도 없으면 `local` | `nadri-1` |
 
 서버는 실행 위치부터 상위 폴더로 올라가며 `.env`를 찾아 읽습니다. 그래서 따로 `export`하지 않아도 됩니다.
 
@@ -340,6 +402,36 @@ cd web && dx serve --port 3300
 ```
 
 개발 서버가 `/api` 요청을 API 서버로 프록시하므로 CORS 설정은 필요 없습니다.
+
+### 5) 여러 인스턴스로 실행 (5단계, 3) 대신)
+
+3)의 `cargo run -p server` 대신 서버를 로컬 Kubernetes 클러스터에 여러 인스턴스로 띄웁니다. 클러스터가 `localhost:8000`을 쓰므로 `cargo run`으로 띄운 서버는 먼저 끕니다. 2)의 PostgreSQL·MediaMTX는 그대로 켜 둡니다.
+
+준비물: Docker Desktop, [kind](https://kind.sigs.k8s.io), kubectl
+
+```bash
+brew install kind kubectl
+```
+
+```bash
+./deploy/up.sh
+```
+
+`up.sh`가 하는 일:
+
+1. kind 클러스터 `nadri`(컨트롤 플레인 1 + 워커 2)를 만들고 모든 노드에 `storage/videos`를 연결합니다. 이미 있으면 그대로 씁니다.
+2. HPA가 CPU 사용률을 읽도록 metrics-server를 설치합니다.
+3. 서버 이미지를 빌드해 클러스터 노드에 넣습니다. 첫 빌드는 의존성 컴파일 때문에 몇 분 걸립니다.
+4. `.env`의 값으로 Secret `nadri-env`를 만듭니다. 클러스터 안에서는 `DATABASE_URL`·`MEDIAMTX_URL`·`MEDIAMTX_API_URL`의 `localhost`를 `host.docker.internal`로 바꿔 이 컴퓨터의 PostgreSQL·MediaMTX에 접속합니다. 따로 넣을 환경변수는 없습니다.
+5. `deploy/k8s/server.yaml`(Deployment·Service·HPA)을 적용하고 인스턴스가 준비될 때까지 기다립니다.
+
+코드를 바꾼 뒤 다시 실행하면 이미지를 새로 빌드해 인스턴스를 차례로 교체합니다. 웹은 4)와 같이 `dx serve`로 띄우면 클러스터의 서버를 씁니다.
+
+클러스터를 지우려면 아래를 실행합니다. DB와 `storage/videos`의 데이터는 남습니다.
+
+```bash
+./deploy/down.sh
+```
 
 ### 테스트
 
@@ -635,3 +727,94 @@ docker exec streaming-platform-postgres psql -U streaming -d streaming \
 5. 배포한 서버에서는 개발자센터 **웹훅** 메뉴에 `https://<도메인>/api/payments/webhook`을 `PAYMENT_STATUS_CHANGED` 이벤트로 등록하면 결제 서비스가 직접 통지를 보냅니다.
 
 확인이 끝나면 `rm viewer.txt`로 쿠키 파일을 지웁니다.
+
+## 5단계 직접 확인 절차 (여러 인스턴스·자동 스케일링)
+
+터미널 세 개를 씁니다. 먼저 2)의 PostgreSQL·MediaMTX와 5)의 클러스터를 띄웁니다.
+
+### A. 요청이 여러 인스턴스로 나뉘는지
+
+```bash
+for i in $(seq 1 10); do curl -s -o /dev/null -D - http://localhost:8000/api/health | grep -i x-instance; done | sort | uniq -c
+```
+
+두 인스턴스 이름이 섞여 나옵니다(예: 5번·5번).
+
+### B. 확인용 로그인·방송·댓글 만들기
+
+웹(http://localhost:3300)에서 회원가입하고 영상 방송을 하나 등록한 뒤 댓글을 하나 씁니다. 브라우저 개발자 도구 → 애플리케이션 → 쿠키에서 `nadri_session` 값을 복사하고, 방송 상세 주소의 id를 확인합니다. `curl`로 할 수도 있습니다.
+
+```bash
+curl -s -c cookie.txt -o /dev/null -H 'content-type: application/json' \
+  -d '{"username":"scale5","password":"<비밀번호 8자 이상>"}' http://localhost:8000/api/auth/signup
+curl -s -b cookie.txt -F 'title=5단계 스케일 확인' -F 'video=@<영상 파일>.mp4;type=video/mp4' http://localhost:8000/api/broadcasts
+curl -s -b cookie.txt -H 'content-type: application/json' -d '{"body":"스케일 아웃 전에 쓴 댓글"}' \
+  http://localhost:8000/api/broadcasts/<방송 id>/comments
+grep nadri_session cookie.txt | awk '{print "nadri_session="$7}'   # check.sh 에 넘길 쿠키
+```
+
+### C. 부하를 걸고 인스턴스 수 변화 보기
+
+1. 터미널 1: 인스턴스 수와 CPU 사용률을 10초마다 찍습니다.
+   ```bash
+   ./deploy/watch.sh
+   ```
+2. 터미널 2: 로그인·목록·댓글·영상이 그대로인지 10초마다 확인합니다. 괄호 안은 응답한 인스턴스입니다.
+   ```bash
+   ./deploy/check.sh 'nadri_session=<쿠키 값>' <방송 id>
+   ```
+3. 터미널 3: 부하를 겁니다(가상 사용자 50명, 4분). 끝나면 요청 수·실패율 요약이 나옵니다. 도중에 멈추려면 Ctrl+C.
+   ```bash
+   DURATION=4m ./deploy/load.sh
+   ```
+4. 터미널 1에서 CPU 사용률이 50%를 넘으면 `DESIRED`·`READY`가 늘어 최대 8개가 됩니다. 부하가 끝나고 1분쯤 지나면 2개까지 줄어듭니다. `kubectl get hpa nadri-server -w`나 `kubectl get pods -l app=nadri-server -w`로도 볼 수 있습니다.
+5. 그동안 터미널 2의 모든 줄이 `me=200:<아이디>`, 같은 방송 수, 같은 댓글 수, `video=206`이고 괄호 안 인스턴스 이름이 바뀌어 가는지 봅니다. 스케일 인으로 사라진 인스턴스가 받았던 로그인도 다른 인스턴스에서 그대로입니다.
+6. 웹에서 새로고침해도 로그인 상태·방송 목록·댓글이 그대로입니다.
+
+### 확인한 결과 (2026-11-22, MacBook · Docker Desktop)
+
+`deploy/watch.sh` 출력. 부하 시작 전에는 2개였습니다. 첫 시도는 부하를 이 컴퓨터의 8000 포트로 보내다가 Docker Desktop 포트 전달 단계에서 연결이 시간 초과돼 중단했는데, 그때 3개로 늘어 있었습니다. 아래는 그 뒤 `deploy/load.sh`(가상 사용자 50명, 4분)로 다시 건 부하입니다(01:48:10 시작, 01:52:40 종료).
+
+```
+TIME     HPA-CPU      DESIRED   READY    PODS
+01:47:37 2%/50%       2         2        Running:2
+01:47:47 57%/50%      3         3        Running:3      ← 첫 시도
+01:48:08 1%/50%       3         3        Running:3
+01:48:19 50%/50%      3         3        Running:3      ← 부하 시작
+01:48:39 290%/50%     6         6        Running:6
+01:48:50 363%/50%     6         6        Running:6
+01:49:00 316%/50%     8         6        ContainerCreating:2 Running:6
+01:49:11 316%/50%     8         8        Running:8      ← 최대
+01:49:21 265%/50%     8         8        Running:8
+   … (최대 8개로 200% 안팎 유지)
+01:52:28 186%/50%     8         8        Running:8
+01:52:38 44%/50%      8         8        Running:8      ← 부하 종료
+01:52:48 4%/50%       8         8        Running:8
+01:53:29 1%/50%       8         8        Running:8
+01:53:39 1%/50%       6         6        Running:6      ← 스케일 인
+01:54:10 1%/50%       4         4        Running:4
+01:54:31 1%/50%       2         2        Running:2 Terminating:2
+01:54:51 1%/50%       2         2        Running:2      ← 최소
+```
+
+`deploy/load.sh` 요약: 요청 557,886건(초당 약 2,300건), 실패 0건(0.00%), 응답 시간 p95 21.7ms. 스케일 인으로 인스턴스가 종료되는 동안에도 실패한 요청은 없었습니다.
+
+`deploy/check.sh` 출력(일부). 같은 시간 동안 60회 모두 로그인 유지·방송 11개·댓글 1개·영상 `206`이었고, 응답한 인스턴스는 8개였습니다.
+
+```
+01:47:42  me=200:scale5(nadri-server-5b79584578-s4lbs)  broadcasts=200:11(nadri-server-5b79584578-s4lbs)  comments=200:1(nadri-server-5b79584578-s4lbs)  video=206 nadri-server-5b79584578-s4lbs
+01:48:44  me=200:scale5(nadri-server-5b79584578-7x6pm)  broadcasts=200:11(nadri-server-5b79584578-9nvmr)  comments=200:1(nadri-server-5b79584578-z65dg)  video=206 nadri-server-5b79584578-9nvmr
+01:49:35  me=200:scale5(nadri-server-5b79584578-dfrtb)  broadcasts=200:11(nadri-server-5b79584578-dfrtb)  comments=200:1(nadri-server-5b79584578-9nvmr)  video=206 nadri-server-5b79584578-9nvmr
+01:54:38  me=200:scale5(nadri-server-5b79584578-7x6pm)  broadcasts=200:11(nadri-server-5b79584578-7x6pm)  comments=200:1(nadri-server-5b79584578-7x6pm)  video=206 nadri-server-5b79584578-s4lbs
+01:54:59  me=200:scale5(nadri-server-5b79584578-7x6pm)  broadcasts=200:11(nadri-server-5b79584578-s4lbs)  comments=200:1(nadri-server-5b79584578-s4lbs)  video=206 nadri-server-5b79584578-7x6pm
+```
+
+- 로그인 세션은 `…447lw` 인스턴스에서 만들어졌고, 댓글은 `…s4lbs` 인스턴스가 받았습니다. 둘 다 부하 중에 새로 뜬 인스턴스(`…9nvmr`, `…dfrtb` 등)와 스케일 인 뒤 남은 인스턴스에서 그대로 조회됐습니다. `…447lw`는 스케일 인으로 사라졌습니다.
+- 클러스터에서 송출 없이 시작한 라이브(`POST /api/broadcasts/live`)는 다른 인스턴스에서 조회해도 `live`였고, 31초 뒤 `ended`가 됐습니다(송출이 연결되지 않은 라이브를 끝내는 확인이 클러스터에서도 MediaMTX에 닿음).
+
+### 문제 해결
+
+- **`up.sh`에서 포트 8000 사용 중**: `cargo run -p server`로 띄운 서버를 끄고 `./deploy/down.sh` 후 다시 실행합니다.
+- **Pod 이 `Running`인데 `READY 0/1`**: DB에 닿지 않는 상태입니다. `docker compose ps`로 PostgreSQL이 떠 있는지, `kubectl logs deploy/nadri-server`로 오류를 확인합니다.
+- **`watch.sh`의 CPU가 `?`**: metrics-server가 지표를 모으는 중입니다. 1분쯤 기다립니다.
+- **부하를 `localhost:8000`으로 보내면 `dial: i/o timeout`**: 새 연결이 몰리면 Docker Desktop의 포트 전달이 따라가지 못합니다. `load.sh`처럼 kind 네트워크에서 보냅니다.
