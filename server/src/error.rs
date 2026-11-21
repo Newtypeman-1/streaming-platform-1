@@ -20,6 +20,8 @@ pub enum AppError {
     Conflict(String),
     /// 외부 서비스(미디어·결제 서버) 연결 실패. 사용자에게 보여 줄 문구를 담는다. 원인은 변환할 때 로그로 남긴다.
     BadGateway(&'static str),
+    /// 이 인스턴스가 지금 요청을 처리할 수 없다(DB 연결 끊김 등). 로드밸런서가 다른 인스턴스로 보내게 한다.
+    Unavailable(&'static str),
     Internal(String),
 }
 
@@ -32,6 +34,7 @@ impl IntoResponse for AppError {
             AppError::NotFound(detail) => (StatusCode::NOT_FOUND, detail),
             AppError::Conflict(detail) => (StatusCode::CONFLICT, detail),
             AppError::BadGateway(detail) => (StatusCode::BAD_GATEWAY, detail.to_string()),
+            AppError::Unavailable(detail) => (StatusCode::SERVICE_UNAVAILABLE, detail.to_string()),
             AppError::Internal(detail) => {
                 tracing::error!("{detail}");
                 (StatusCode::INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다.".to_string())

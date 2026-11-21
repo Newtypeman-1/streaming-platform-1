@@ -17,6 +17,7 @@ use crate::broadcast::{BroadcastError, ensure_deletable, ensure_owner, normalize
 use crate::entity::{broadcast, user};
 use crate::error::{AppError, JsonBody};
 
+const HEALTH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 const MAX_UPLOAD_BYTES: usize = 2 * 1024 * 1024 * 1024; // 2GB
 
 pub fn router(state: AppState) -> Router {
@@ -27,11 +28,25 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/api/broadcasts/{id}", get(detail).patch(update).delete(remove))
         .route("/api/broadcasts/{id}/video", get(video))
+        .route("/api/health", get(health))
         .merge(crate::live_api::routes())
         .merge(crate::auth_api::routes())
         .merge(crate::comment_api::routes())
         .merge(crate::donation_api::routes())
         .with_state(state)
+}
+
+/// 로드밸런서·오케스트레이터가 이 인스턴스에 요청을 보내도 되는지 묻는 곳.
+/// DB 에 닿지 않으면 503. 연결 대기(기본 30초)까지 기다리면 확인 요청이 먼저 시간 초과되므로 짧게 끊는다.
+async fn health(State(state): State<AppState>) -> Result<StatusCode, AppError> {
+    match tokio::time::timeout(HEALTH_TIMEOUT, state.db.ping()).await {
+        Ok(Ok(())) => Ok(StatusCode::OK),
+        Ok(Err(e)) => {
+            tracing::warn!("상태 확인 실패: {e}");
+            Err(AppError::Unavailable("DB에 연결할 수 없습니다."))
+        }
+        Err(_) => Err(AppError::Unavailable("DB 응답이 늦습니다.")),
+    }
 }
 
 pub(crate) fn to_response(model: broadcast::Model, owner: Option<user::Model>) -> BroadcastResponse {
