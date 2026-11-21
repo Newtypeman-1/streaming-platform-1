@@ -102,3 +102,28 @@ impl PaymentGateway {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn 결제_API_주소가_https_여도_TLS_연결을_시도한다() {
+        // 접속만 받는 로컬 서버: TLS 를 지원하면 핸드셰이크를 보내고, 지원하지 않으면 요청을 보내지 못한다
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let handshake = tokio::spawn(async move {
+            use tokio::io::AsyncReadExt;
+            let wait = std::time::Duration::from_secs(2);
+            let (mut socket, _) = tokio::time::timeout(wait, listener.accept()).await.ok()?.ok()?;
+            let mut first = [0u8; 1];
+            tokio::time::timeout(wait, socket.read_exact(&mut first)).await.ok()?.ok()?;
+            Some(first[0])
+        });
+        let gateway = PaymentGateway::new(&format!("https://{addr}"), "test_sk", "test_ck");
+        let send = gateway.http.get(format!("{}/v1/payments/x", gateway.api_url)).timeout(std::time::Duration::from_secs(2)).send();
+        let (_, first) = tokio::join!(send, handshake);
+        // TLS 핸드셰이크 레코드는 0x16 으로 시작한다
+        assert_eq!(first.unwrap(), Some(0x16));
+    }
+}
