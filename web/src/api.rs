@@ -2,7 +2,7 @@
 
 use gloo_net::http::{Request, Response};
 use serde::de::DeserializeOwned;
-use shared::{BroadcastResponse, ErrorResponse};
+use shared::{BroadcastResponse, ErrorResponse, StartLiveRequest, StartLiveResponse};
 use web_sys::{File, FormData};
 
 async fn parse<T: DeserializeOwned>(res: Response) -> Result<T, String> {
@@ -35,6 +35,27 @@ pub async fn register_broadcast(title: &str, video: &File) -> Result<BroadcastRe
     let res = Request::post("/api/broadcasts")
         .body(form)
         .map_err(|e| e.to_string())?
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    parse(res).await
+}
+
+/// 라이브 방송을 만들고 송출 키를 받는다
+pub async fn start_live(title: &str) -> Result<StartLiveResponse, String> {
+    let req = StartLiveRequest { title: title.to_string() };
+    let res = Request::post("/api/broadcasts/live")
+        .json(&req)
+        .map_err(|e| e.to_string())?
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    parse(res).await
+}
+
+pub async fn end_live(id: i64, stream_key: &str) -> Result<BroadcastResponse, String> {
+    let res = Request::post(&shared::end_url(id))
+        .header("Authorization", &format!("Bearer {stream_key}"))
         .send()
         .await
         .map_err(|e| e.to_string())?;
