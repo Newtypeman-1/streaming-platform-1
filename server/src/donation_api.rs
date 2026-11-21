@@ -3,12 +3,12 @@
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::Utc;
 use serde::Deserialize;
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
-use shared::{ConfirmDonationRequest, DonationOrderResponse, FailDonationRequest, DonationRequest, DonationStatus};
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set};
+use shared::{ConfirmDonationRequest, DonationOrderResponse, DonationRequest, DonationResponse, DonationStatus, DonationSummary, FailDonationRequest};
 
 use crate::AppState;
 use crate::api::find;
@@ -20,7 +20,7 @@ use crate::payment::PaymentError;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/api/broadcasts/{id}/donations", post(order))
+        .route("/api/broadcasts/{id}/donations", get(summary).post(order))
         .route("/api/donations/confirm", post(confirm))
         .route("/api/donations/{order_id}/fail", post(record_failure))
         .route("/api/payments/webhook", post(webhook))
@@ -42,6 +42,31 @@ fn order_response(state: &AppState, model: donation::Model, recipient: user::Mod
 /// 결제창에 보이는 상품명
 fn order_name(recipient: &str) -> String {
     format!("나드리 {recipient} 님 후원")
+}
+
+/// 방송별 후원 내역과 합계. 확정된 후원만.
+async fn summary(State(state): State<AppState>, Path(id): Path<i64>) -> Result<Json<DonationSummary>, AppError> {
+    find(&state, id).await?;
+    let rows = donation::Entity::find()
+        .filter(donation::Column::BroadcastId.eq(id))
+        .filter(donation::Column::Status.eq(DonationStatus::Done.as_str()))
+        .find_also_related(user::Entity)
+        .order_by_desc(donation::Column::ApprovedAt)
+        .order_by_desc(donation::Column::Id)
+        .all(&state.db)
+        .await?;
+    // 후원자는 NOT NULL 외래 키, 승인 시각은 확정할 때 함께 기록하므로 항상 있다
+    let donations: Vec<DonationResponse> = rows
+        .into_iter()
+        .filter_map(|(d, donor)| {
+            Some(DonationResponse { id: d.id, donor: donor?.into(), amount: d.amount, approved_at: d.approved_at?.to_rfc3339() })
+        })
+        .collect();
+    Ok(Json(DonationSummary {
+        total: donations.iter().map(|d| d.amount).sum(),
+        count: donations.len() as u64,
+        donations,
+    }))
 }
 
 async fn order(

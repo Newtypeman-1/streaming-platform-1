@@ -197,7 +197,26 @@ pub struct FailDonationRequest {
     pub message: Option<String>,
 }
 
-/// 후원 주문(POST, 로그인)
+/// 확정된 후원 한 건
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DonationResponse {
+    pub id: i64,
+    pub donor: UserResponse,
+    pub amount: i64,
+    /// RFC 3339. 결제가 승인된 시각
+    pub approved_at: String,
+}
+
+/// 방송별 후원 내역과 합계. 확정된 후원만 센다.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DonationSummary {
+    pub total: i64,
+    pub count: u64,
+    pub donations: Vec<DonationResponse>,
+}
+
+/// 방송의 후원 내역·합계(GET, 누구나) · 후원 주문(POST, 로그인)
 pub fn donations_url(broadcast_id: i64) -> String {
     format!("/api/broadcasts/{broadcast_id}/donations")
 }

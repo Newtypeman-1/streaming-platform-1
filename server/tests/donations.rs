@@ -1,8 +1,8 @@
 mod common;
 
 use axum::http::StatusCode;
-use common::{TestApp, app, json, with_cookie};
-use shared::{BroadcastResponse, DONATION_CONFIRM_URL, DonationOrderResponse, DonationStatus, ErrorResponse, PAYMENT_WEBHOOK_URL, donation_fail_url, donations_url};
+use common::{TestApp, app, get, json, with_cookie};
+use shared::{BroadcastResponse, DONATION_CONFIRM_URL, DonationOrderResponse, DonationStatus, DonationSummary, ErrorResponse, PAYMENT_WEBHOOK_URL, donation_fail_url, donations_url};
 
 /// 방송자(owner)의 녹화 방송 하나와 후원할 시청자(viewer) 로그인 쿠키
 async fn setup() -> (TestApp, BroadcastResponse, String) {
@@ -340,4 +340,53 @@ async fn 조회한_결제_금액이_주문과_다르면_실패로_기록하고_2
     toss_approved(&app, "pay_1", &order.order_id, 100);
     assert_eq!(notify(&app, "pay_1", &order.order_id, 5000).await, StatusCode::OK);
     assert_eq!(order_status(&app, &order.order_id).await, DonationStatus::Failed);
+}
+
+async fn summary(app: &TestApp, broadcast_id: i64) -> DonationSummary {
+    let (status, _, body) = app.send(get(&donations_url(broadcast_id))).await;
+    assert_eq!(status, StatusCode::OK);
+    serde_json::from_slice(&body).unwrap()
+}
+
+/// 주문하고 승인까지 확인한다
+async fn donate(app: &TestApp, cookie: &str, broadcast_id: i64, amount: i64) {
+    let order = order(app, cookie, broadcast_id, amount).await;
+    let (status, _) = confirm(app, cookie, &format!("pay-{}", order.order_id), &order.order_id, amount).await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn 방송별_후원_내역과_합계는_확정된_후원만_최근_순으로_누구나_본다() {
+    let (app, broadcast, viewer) = setup().await;
+    let fan = app.signup("fan").await;
+    donate(&app, &viewer, broadcast.id, 5000).await;
+    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    donate(&app, &fan, broadcast.id, 3000).await;
+    // 결제 대기·취소는 세지 않는다
+    order(&app, &viewer, broadcast.id, 10_000).await;
+    let canceled = order(&app, &viewer, broadcast.id, 20_000).await;
+    report_fail(&app, &viewer, &canceled.order_id, "PAY_PROCESS_CANCELED").await;
+
+    let summary = summary(&app, broadcast.id).await;
+    assert_eq!((summary.total, summary.count), (8000, 2));
+    let rows: Vec<_> = summary.donations.iter().map(|d| (d.donor.username.as_str(), d.amount)).collect();
+    assert_eq!(rows, [("fan", 3000), ("viewer", 5000)]);
+}
+
+#[tokio::test]
+async fn 후원_내역은_방송별로_따로_센다() {
+    let (app, broadcast, viewer) = setup().await;
+    let other_owner = app.signup("owner2").await;
+    let other = app.register(&other_owner, "다른 방송").await;
+    donate(&app, &viewer, broadcast.id, 5000).await;
+    donate(&app, &viewer, other.id, 7000).await;
+    let summary = summary(&app, other.id).await;
+    assert_eq!((summary.total, summary.count), (7000, 1));
+}
+
+#[tokio::test]
+async fn 없는_방송의_후원_내역은_404() {
+    let (app, _, _) = setup().await;
+    let (status, _, _) = app.send(get(&donations_url(9999))).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
