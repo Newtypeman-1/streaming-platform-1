@@ -6,6 +6,7 @@ use shared::ErrorResponse;
 
 use crate::auth::AuthError;
 use crate::broadcast::BroadcastError;
+use crate::comment::CommentError;
 use crate::live::LiveError;
 use crate::media::MediaError;
 
@@ -57,6 +58,15 @@ impl From<BroadcastError> for AppError {
             BroadcastError::NotOwner => AppError::Forbidden(e.to_string()),
             BroadcastError::StillLive => AppError::Conflict(e.to_string()),
             _ => AppError::BadRequest(e.to_string()),
+        }
+    }
+}
+
+impl From<CommentError> for AppError {
+    fn from(e: CommentError) -> Self {
+        match e {
+            CommentError::NotAuthor => AppError::Forbidden(e.to_string()),
+            CommentError::EmptyBody | CommentError::BodyTooLong => AppError::BadRequest(e.to_string()),
         }
     }
 }

@@ -2,6 +2,8 @@ pub mod api;
 pub mod auth;
 pub mod auth_api;
 pub mod broadcast;
+pub mod comment;
+pub mod comment_api;
 pub mod entity;
 pub mod error;
 pub mod live;

@@ -76,6 +76,25 @@ pub struct UserResponse {
     pub username: String,
 }
 
+/// 댓글 작성·수정 요청.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CommentRequest {
+    pub body: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommentResponse {
+    pub id: i64,
+    pub broadcast_id: i64,
+    pub author: UserResponse,
+    pub body: String,
+    /// RFC 3339
+    pub created_at: String,
+    /// 마지막으로 수정한 시각. 수정하지 않았으면 없다.
+    pub updated_at: Option<String>,
+}
+
 /// 오류 응답. RFC 9457 Problem Details 의 필드 이름을 따른다.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ErrorResponse {
@@ -100,4 +119,14 @@ pub fn whep_url(id: i64) -> String {
 /// 라이브 종료. 방송 소유자로 로그인해 있어야 한다.
 pub fn end_url(id: i64) -> String {
     format!("/api/broadcasts/{id}/end")
+}
+
+/// 방송의 댓글 목록(GET, 누구나) · 작성(POST, 로그인)
+pub fn comments_url(broadcast_id: i64) -> String {
+    format!("/api/broadcasts/{broadcast_id}/comments")
+}
+
+/// 댓글 수정(PATCH) · 삭제(DELETE). 작성자만.
+pub fn comment_url(id: i64) -> String {
+    format!("/api/comments/{id}")
 }

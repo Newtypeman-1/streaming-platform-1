@@ -12,7 +12,83 @@ impl MigratorTrait for Migrator {
             Box::new(m20261120_000001_add_live::Migration),
             Box::new(m20261121_000001_add_users::Migration),
             Box::new(m20261121_000002_add_broadcast_owner::Migration),
+            Box::new(m20261121_000003_add_comment::Migration),
         ]
+    }
+}
+
+/// 3단계: 댓글. 방송을 지우면 댓글도 함께 지운다.
+mod m20261121_000003_add_comment {
+    use super::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261121_000003_add_comment"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .create_table(
+                    Table::create()
+                        .table(Comment::Table)
+                        .col(big_pk_auto(Comment::Id))
+                        .col(big_integer(Comment::BroadcastId))
+                        .col(big_integer(Comment::UserId))
+                        .col(string_len(Comment::Body, crate::comment::BODY_MAX_CHARS as u32))
+                        .col(timestamp_with_time_zone(Comment::CreatedAt))
+                        .col(timestamp_with_time_zone_null(Comment::UpdatedAt))
+                        .foreign_key(
+                            ForeignKey::create()
+                                .from(Comment::Table, Comment::BroadcastId)
+                                .to(Broadcast::Table, Broadcast::Id)
+                                .on_delete(ForeignKeyAction::Cascade),
+                        )
+                        .foreign_key(
+                            ForeignKey::create()
+                                .from(Comment::Table, Comment::UserId)
+                                .to(Users::Table, Users::Id)
+                                .on_delete(ForeignKeyAction::Cascade),
+                        )
+                        .to_owned(),
+                )
+                .await?;
+            // 방송별 목록 조회용
+            manager
+                .create_index(Index::create().name("idx_comment_broadcast").table(Comment::Table).col(Comment::BroadcastId).to_owned())
+                .await
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.drop_table(Table::drop().table(Comment::Table).to_owned()).await
+        }
+    }
+
+    #[derive(DeriveIden)]
+    enum Comment {
+        Table,
+        Id,
+        BroadcastId,
+        UserId,
+        Body,
+        CreatedAt,
+        UpdatedAt,
+    }
+
+    #[derive(DeriveIden)]
+    enum Broadcast {
+        Table,
+        Id,
+    }
+
+    #[derive(DeriveIden)]
+    enum Users {
+        Table,
+        Id,
     }
 }
 
