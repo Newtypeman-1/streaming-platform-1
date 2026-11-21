@@ -2,19 +2,59 @@
 
 use gloo_net::http::{Request, Response};
 use serde::de::DeserializeOwned;
-use shared::{BroadcastResponse, ErrorResponse, StartLiveRequest, StartLiveResponse};
+use shared::{
+    BroadcastResponse, CommentRequest, CommentResponse, Credentials, ErrorResponse, StartLiveRequest, StartLiveResponse,
+    UpdateBroadcastRequest, UserResponse,
+};
 use web_sys::{File, FormData};
 
 async fn parse<T: DeserializeOwned>(res: Response) -> Result<T, String> {
     if res.ok() {
         return res.json().await.map_err(|e| e.to_string());
     }
+    Err(error_message(res).await)
+}
+
+/// 본문 없는 성공 응답(204)
+async fn expect_ok(res: Response) -> Result<(), String> {
+    if res.ok() {
+        return Ok(());
+    }
+    Err(error_message(res).await)
+}
+
+async fn error_message(res: Response) -> String {
     let status = res.status();
-    Err(res
-        .json::<ErrorResponse>()
-        .await
-        .map(|e| e.detail)
-        .unwrap_or_else(|_| format!("요청 실패 ({status})")))
+    res.json::<ErrorResponse>().await.map(|e| e.detail).unwrap_or_else(|_| format!("요청 실패 ({status})"))
+}
+
+async fn send(req: Result<Request, gloo_net::Error>) -> Result<Response, String> {
+    req.map_err(|e| e.to_string())?.send().await.map_err(|e| e.to_string())
+}
+
+// ── 로그인 ── 세션은 HttpOnly 쿠키라 JS 가 직접 다루지 않는다. 같은 출처 요청이라 브라우저가 알아서 쿠키를 보낸다.
+
+/// 로그인 상태. 로그인하지 않았으면 None.
+pub async fn me() -> Result<Option<UserResponse>, String> {
+    let res = Request::get("/api/auth/me").send().await.map_err(|e| e.to_string())?;
+    if res.status() == 401 {
+        return Ok(None);
+    }
+    parse(res).await.map(Some)
+}
+
+pub async fn signup(username: &str, password: &str) -> Result<UserResponse, String> {
+    let req = Credentials { username: username.into(), password: password.into() };
+    parse(send(Request::post("/api/auth/signup").json(&req)).await?).await
+}
+
+pub async fn login(username: &str, password: &str) -> Result<UserResponse, String> {
+    let req = Credentials { username: username.into(), password: password.into() };
+    parse(send(Request::post("/api/auth/login").json(&req)).await?).await
+}
+
+pub async fn logout() -> Result<(), String> {
+    expect_ok(Request::post("/api/auth/logout").send().await.map_err(|e| e.to_string())?).await
 }
 
 pub async fn fetch_broadcasts() -> Result<Vec<BroadcastResponse>, String> {
@@ -60,6 +100,35 @@ pub async fn end_live(id: i64) -> Result<BroadcastResponse, String> {
         .await
         .map_err(|e| e.to_string())?;
     parse(res).await
+}
+
+pub async fn update_broadcast(id: i64, title: &str) -> Result<BroadcastResponse, String> {
+    let req = UpdateBroadcastRequest { title: title.into() };
+    parse(send(Request::patch(&format!("/api/broadcasts/{id}")).json(&req)).await?).await
+}
+
+pub async fn delete_broadcast(id: i64) -> Result<(), String> {
+    expect_ok(Request::delete(&format!("/api/broadcasts/{id}")).send().await.map_err(|e| e.to_string())?).await
+}
+
+// ── 댓글 ──
+
+pub async fn fetch_comments(broadcast_id: i64) -> Result<Vec<CommentResponse>, String> {
+    parse(Request::get(&shared::comments_url(broadcast_id)).send().await.map_err(|e| e.to_string())?).await
+}
+
+pub async fn write_comment(broadcast_id: i64, body: &str) -> Result<CommentResponse, String> {
+    let req = CommentRequest { body: body.into() };
+    parse(send(Request::post(&shared::comments_url(broadcast_id)).json(&req)).await?).await
+}
+
+pub async fn edit_comment(id: i64, body: &str) -> Result<CommentResponse, String> {
+    let req = CommentRequest { body: body.into() };
+    parse(send(Request::patch(&shared::comment_url(id)).json(&req)).await?).await
+}
+
+pub async fn delete_comment(id: i64) -> Result<(), String> {
+    expect_ok(Request::delete(&shared::comment_url(id)).send().await.map_err(|e| e.to_string())?).await
 }
 
 /// RFC 3339 시각을 브라우저 로캘 형식으로 보여준다.

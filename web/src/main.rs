@@ -1,9 +1,12 @@
 use dioxus::prelude::*;
 
 mod api;
+mod auth;
+mod comments;
 mod live;
 mod pages;
 
+use auth::{AccountMenu, Login, Signup};
 use live::LiveStudio;
 use pages::{BroadcastDetail, BroadcastList, BroadcastNew};
 
@@ -18,6 +21,10 @@ enum Route {
     LiveStudio {},
     #[route("/broadcasts/:id")]
     BroadcastDetail { id: i64 },
+    #[route("/login")]
+    Login {},
+    #[route("/signup")]
+    Signup {},
 }
 
 const STYLE: Asset = asset!("/assets/main.css");
@@ -29,6 +36,7 @@ fn main() {
 
 #[component]
 fn App() -> Element {
+    auth::provide_session();
     rsx! {
         document::Stylesheet { href: STYLE }
         document::Script { src: LIVE_JS }
@@ -44,6 +52,7 @@ fn Layout() -> Element {
             nav { class: "row",
                 Link { to: Route::BroadcastNew {}, class: "button secondary", "녹화 등록" }
                 Link { to: Route::LiveStudio {}, class: "button", "라이브 시작" }
+                AccountMenu {}
             }
         }
         main { class: "main", Outlet::<Route> {} }

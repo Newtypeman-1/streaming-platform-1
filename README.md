@@ -128,6 +128,13 @@
   - 방송을 지우면 그 방송의 댓글도 함께 지워집니다.
   - 라이브 중 댓글은 실시간으로 밀어주지 않고, 시청 화면이 3초마다 목록을 다시 불러옵니다. 실시간 채팅(WebSocket)은 이번 단계 범위가 아닙니다.
 
+- **웹 화면**
+  - 오른쪽 위에서 로그인·회원가입·로그아웃합니다. 로그인하면 아이디가 표시됩니다.
+  - 녹화 등록·라이브 시작 화면은 로그인하지 않으면 "로그인이 필요합니다"를 보여 줍니다.
+  - 상세 화면에서 방송 소유자에게만 **제목 수정**·**삭제** 버튼이, 댓글 작성자에게만 그 댓글의 **수정**·**삭제** 버튼이 보입니다. 버튼을 숨기는 것은 편의일 뿐이고, 권한은 서버가 검사합니다.
+
+**이번 단계에서 하지 않는 것:** 비밀번호 찾기·변경, 회원 탈퇴, 이메일 인증, 소셜 로그인, 로그인 시도 횟수 제한, 방송 소유자의 댓글 관리(남의 댓글 삭제·차단), 실시간 채팅(WebSocket), 비공개 방송, 모바일 앱용 토큰 인증
+
 ### 공개 범위
 
 | 기능 | 비로그인 | 로그인 (다른 사용자) | 로그인 (소유자·작성자) |
@@ -373,3 +380,113 @@ ffmpeg -re -f lavfi -i testsrc=size=640x360:rate=30 -f lavfi -i sine=frequency=4
 | `https://...:3443` 접속 불가 | `docker compose --profile phone up -d` 를 실행했는지, `dx serve --port 3300` 이 떠 있는지, 같은 와이파이인지 |
 | "송출 연결 중..."에서 멈춘 뒤 실패 | `.env`의 `PUBLIC_HOST`가 현재 LAN IP와 같은지. 바꿨다면 `docker compose up -d` 를 다시 실행 |
 | "방송 서버에 연결하지 못했습니다" | MediaMTX 컨테이너가 떠 있는지 (`docker compose ps`) |
+
+## 3단계 직접 확인 절차 (로그인·권한·댓글)
+
+> 3단계에서 새로 필요한 환경변수는 없습니다. 위 "실행 방법"대로 실행하면 서버가 뜰 때 회원·세션·댓글 테이블과 방송 소유자 컬럼이 마이그레이션으로 추가됩니다. 2단계까지 만든 방송은 소유자가 없는 상태(`owner: null`)로 남습니다.
+
+비로그인 사용자, 방송 소유자, 다른 사용자 세 역할로 확인합니다. 화면 확인(A)과 API 직접 호출 확인(B)을 모두 합니다. B는 화면에 버튼이 없어도 서버가 거절하는지 보는 절차입니다.
+
+### A. 화면에서 확인
+
+브라우저 두 개를 씁니다. 예: 일반 창은 **소유자**, 시크릿 창은 **다른 사용자**. 로그인 쿠키가 창마다 따로 저장됩니다.
+
+1. PostgreSQL, API 서버, 웹을 실행하고 http://localhost:3300 에 접속합니다.
+2. **비로그인**
+   - 목록과 기존 방송 상세(영상 재생)는 그대로 볼 수 있습니다.
+   - **녹화 등록**이나 **라이브 시작**을 누르면 "로그인이 필요합니다."가 나옵니다.
+   - 상세 화면 아래 댓글 목록은 보이지만 입력창 대신 "로그인하면 댓글을 쓸 수 있습니다."가 나옵니다. 제목 수정·삭제 버튼도 없습니다.
+3. **소유자 가입**: 일반 창에서 오른쪽 위 **로그인 → 회원가입**으로 `owner1` / `password123` 가입합니다. 오른쪽 위에 `owner1`이 표시됩니다.
+   - 규칙 확인: 아이디 `ab`나 8자 미만 비밀번호는 오류 메시지가 나옵니다. 같은 아이디로 다시 가입하면 "이미 사용 중인 아이디입니다."가 나옵니다.
+4. **소유자가 녹화 방송 등록**: **녹화 등록**으로 영상을 올립니다. 상세 화면에 `owner1 · 시각 시작`이 표시되고, 제목 옆에 **제목 수정**·**삭제** 버튼이 있습니다.
+   - **제목 수정**으로 제목을 바꾸고 저장하면 바로 반영됩니다. 새로고침해도 유지됩니다.
+   - 댓글을 하나 씁니다. 내 댓글에만 **수정**·**삭제**가 보입니다.
+5. **다른 사용자**: 시크릿 창에서 `viewer1` / `password123`으로 가입하고 같은 방송 상세로 갑니다.
+   - **제목 수정**·**삭제** 버튼이 없습니다.
+   - 댓글을 쓸 수 있습니다. 내 댓글에만 **수정**·**삭제**가 보이고, `owner1`의 댓글에는 없습니다.
+   - 내 댓글을 수정하면 시각 옆에 "(수정됨)"이 붙습니다.
+6. **소유자 화면에서 확인**: 일반 창을 새로고침하면 `viewer1`의 댓글이 보입니다. 소유자에게도 그 댓글의 수정·삭제 버튼은 없습니다.
+7. **라이브**: 일반 창(소유자)에서 2단계 절차대로 라이브를 시작합니다. 시크릿 창(다른 사용자)에서 그 라이브를 시청하며 댓글을 쓰면, 소유자의 시청 화면에 3초 안에 나타납니다.
+   - 라이브 중에는 상세 화면에 **삭제** 버튼이 없습니다. 송출 화면에서 **방송 종료**하면 종료됩니다.
+8. **삭제**: 소유자가 녹화 방송 상세에서 **삭제**를 누르고 확인하면 목록으로 돌아가고, 그 방송과 댓글이 사라집니다. `storage/videos`에서 영상 파일도 지워집니다.
+9. **로그아웃**: 오른쪽 위 **로그아웃**을 누르면 로그인 버튼으로 바뀌고, 다시 녹화 등록 화면은 "로그인이 필요합니다."가 됩니다.
+
+### B. API로 직접 호출해 서버의 권한 검사 확인
+
+화면에서 버튼을 숨기는 것만으로 막고 있지 않은지 확인합니다. `curl`로 세 역할의 요청을 직접 보냅니다. 쿠키는 `-c`로 저장하고 `-b`로 보냅니다. 웹 개발 서버(3300)의 프록시를 거쳐도 같은 결과입니다.
+
+```bash
+API=http://localhost:8000
+J='content-type: application/json'
+# 아이디가 이미 있으면 바꿔서 실행합니다
+curl -s -c owner.txt $API/api/auth/signup -H "$J" -d '{"username":"owner2","password":"password123"}'
+curl -s -c other.txt $API/api/auth/signup -H "$J" -d '{"username":"other2","password":"password123"}'
+```
+
+녹화 방송을 소유자로 하나 만들고 `id`를 적어 둡니다(영상은 1단계의 ffmpeg 명령으로 만든 `sample.mp4`).
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' $API/api/broadcasts -F title=비로그인 -F 'video=@sample.mp4;type=video/mp4'   # 401
+curl -s -b owner.txt $API/api/broadcasts -F title=소유자방송 -F 'video=@sample.mp4;type=video/mp4'                    # 201, owner 가 owner2
+ID=<위 응답의 id>
+```
+
+각 요청의 상태 코드를 확인합니다. `code`는 상태 코드만 출력하는 함수입니다.
+
+```bash
+code() { curl -s -o /dev/null -w '%{http_code}\n' "$@"; }
+
+# 방송 제목 수정: 비로그인 401, 다른 사용자 403, 소유자 200
+code -X PATCH $API/api/broadcasts/$ID -H "$J" -d '{"title":"바꿈"}'
+code -b other.txt -X PATCH $API/api/broadcasts/$ID -H "$J" -d '{"title":"바꿈"}'
+code -b owner.txt -X PATCH $API/api/broadcasts/$ID -H "$J" -d '{"title":"바꿈"}'
+
+# 댓글 작성: 비로그인 401, 다른 사용자 201, 소유자 201
+code -X POST $API/api/broadcasts/$ID/comments -H "$J" -d '{"body":"익명"}'
+curl -s -b other.txt -X POST $API/api/broadcasts/$ID/comments -H "$J" -d '{"body":"시청자 댓글"}'
+code -b owner.txt -X POST $API/api/broadcasts/$ID/comments -H "$J" -d '{"body":"방송자 댓글"}'
+CID=<시청자 댓글 응답의 id>
+
+# 댓글 목록: 비로그인도 200
+code $API/api/broadcasts/$ID/comments
+
+# 남의 댓글 수정·삭제: 비로그인 401, 방송 소유자라도 403, 작성자 200 / 204
+code -X PATCH $API/api/comments/$CID -H "$J" -d '{"body":"수정"}'
+code -b owner.txt -X PATCH $API/api/comments/$CID -H "$J" -d '{"body":"수정"}'
+code -b other.txt -X PATCH $API/api/comments/$CID -H "$J" -d '{"body":"수정"}'
+code -b owner.txt -X DELETE $API/api/comments/$CID
+code -b other.txt -X DELETE $API/api/comments/$CID
+
+# 라이브 시작: 비로그인 401, 로그인 201
+code -X POST $API/api/broadcasts/live -H "$J" -d '{"title":"라이브"}'
+curl -s -b owner.txt -X POST $API/api/broadcasts/live -H "$J" -d '{"title":"라이브"}'
+LID=<응답의 broadcast.id>
+KEY=<응답의 streamKey>
+
+# 라이브 송출: 송출 키가 없으면 401
+code -b other.txt -X POST $API/api/broadcasts/$LID/whip -H 'content-type: application/sdp' -d 'v=0'
+
+# 라이브 종료: 비로그인 401, 다른 사용자 403, 송출 키만으로 401, 방송 중 삭제 409, 소유자 200
+code -X POST $API/api/broadcasts/$LID/end
+code -b other.txt -X POST $API/api/broadcasts/$LID/end
+code -H "Authorization: Bearer $KEY" -X POST $API/api/broadcasts/$LID/end
+code -b owner.txt -X DELETE $API/api/broadcasts/$LID
+code -b owner.txt -X POST $API/api/broadcasts/$LID/end
+
+# 방송 삭제: 비로그인 401, 다른 사용자 403, 소유자 204
+code -X DELETE $API/api/broadcasts/$ID
+code -b other.txt -X DELETE $API/api/broadcasts/$ID
+code -b owner.txt -X DELETE $API/api/broadcasts/$ID
+
+# 로그아웃 204, 그 뒤 같은 쿠키로 내 정보 401
+code -b owner.txt -X POST $API/api/auth/logout
+code -b owner.txt $API/api/auth/me
+```
+
+확인이 끝나면 `rm owner.txt other.txt`로 쿠키 파일을 지웁니다.
+
+### 참고
+
+- 로그인 쿠키에는 `Secure` 속성을 붙이지 않았습니다. 개발 환경의 `http://localhost`에서도 쓰기 위해서입니다. 실서비스 배포(HTTPS) 단계에서 붙입니다.
+- 로그인 쿠키는 `SameSite=Lax`라 다른 사이트에서 보낸 POST·PATCH·DELETE에는 실리지 않습니다(CSRF 방지).
+

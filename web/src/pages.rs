@@ -2,10 +2,12 @@ use dioxus::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::HtmlInputElement;
 
-use shared::BroadcastStatus;
+use shared::{BroadcastResponse, BroadcastStatus};
 
 use crate::Route;
 use crate::api;
+use crate::auth::{RequireLogin, use_session};
+use crate::comments::{Comments, confirm};
 use crate::live::LivePlayer;
 
 #[component]
@@ -30,7 +32,12 @@ pub fn BroadcastList() -> Element {
                                 StatusBadge { status: b.status }
                             }
                             strong { "{b.title}" }
-                            span { class: "meta", {api::local_time(&b.created_at)} }
+                            span { class: "meta",
+                                if let Some(owner) = &b.owner {
+                                    "{owner.username} · "
+                                }
+                                {api::local_time(&b.created_at)}
+                            }
                         }
                     }
                 }
@@ -71,8 +78,15 @@ pub fn BroadcastDetail(id: i64) -> Element {
                         }
                     },
                 }
-                h1 { StatusBadge { status: b.status } " {b.title}" }
-                p { class: "meta", {api::local_time(&b.created_at)} " 시작" }
+                TitleBar { key: "{b.id}", broadcast: b.clone() }
+                p { class: "meta",
+                    if let Some(owner) = &b.owner {
+                        "{owner.username} · "
+                    }
+                    {api::local_time(&b.created_at)}
+                    " 시작"
+                }
+                Comments { key: "{b.id}-{b.status.as_str()}", broadcast_id: b.id, live: b.status == BroadcastStatus::Live }
             }
         },
     }
@@ -91,8 +105,85 @@ fn selected_video() -> Option<web_sys::File> {
         .get(0)
 }
 
+/// 제목과, 소유자에게만 보이는 제목 수정·삭제 버튼. 버튼을 숨기는 것과 별개로 서버가 소유자인지 다시 검사한다.
+#[component]
+fn TitleBar(broadcast: BroadcastResponse) -> Element {
+    let session = use_session();
+    let navigator = use_navigator();
+    let mut title = use_signal(|| broadcast.title.clone());
+    let mut editing = use_signal(|| None::<String>);
+    let mut error = use_signal(|| None::<String>);
+    let id = broadcast.id;
+    let is_owner = broadcast.owner.as_ref().is_some_and(|owner| session().is(owner.id));
+    let live = broadcast.status == BroadcastStatus::Live;
+
+    let save = move |evt: FormEvent| async move {
+        evt.prevent_default();
+        let Some(text) = editing() else { return };
+        match api::update_broadcast(id, &text).await {
+            Ok(updated) => {
+                title.set(updated.title);
+                editing.set(None);
+                error.set(None);
+            }
+            Err(e) => error.set(Some(e)),
+        }
+    };
+
+    let delete = move |_| async move {
+        if !confirm("방송을 삭제할까요? 영상과 댓글도 함께 지워집니다.") {
+            return;
+        }
+        match api::delete_broadcast(id).await {
+            Ok(()) => {
+                navigator.push(Route::BroadcastList {});
+            }
+            Err(e) => error.set(Some(e)),
+        }
+    };
+
+    rsx! {
+        div { class: "title-row",
+            if let Some(text) = editing() {
+                form { class: "row", style: "flex: 1", onsubmit: save,
+                    input { class: "inline-input", value: "{text}", maxlength: 100, required: true, oninput: move |e| editing.set(Some(e.value())) }
+                    button { class: "button", "저장" }
+                    button {
+                        class: "button secondary",
+                        r#type: "button",
+                        onclick: move |_| {
+                            editing.set(None);
+                            error.set(None);
+                        },
+                        "취소"
+                    }
+                }
+            } else {
+                h1 { StatusBadge { status: broadcast.status } " {title}" }
+                if is_owner {
+                    div { class: "row",
+                        button { class: "button secondary", onclick: move |_| editing.set(Some(title())), "제목 수정" }
+                        // 방송 중인 라이브는 서버도 삭제를 거절한다(409). 송출 화면에서 먼저 종료한다.
+                        if !live {
+                            button { class: "button danger", onclick: delete, "삭제" }
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(e) = error() {
+            p { class: "error", "{e}" }
+        }
+    }
+}
+
 #[component]
 pub fn BroadcastNew() -> Element {
+    rsx! { RequireLogin { RegisterForm {} } }
+}
+
+#[component]
+fn RegisterForm() -> Element {
     let mut title = use_signal(String::new);
     let mut submitting = use_signal(|| false);
     let mut error = use_signal(|| None::<String>);

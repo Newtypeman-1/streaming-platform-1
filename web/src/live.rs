@@ -4,9 +4,9 @@ use dioxus::prelude::*;
 use gloo_timers::future::TimeoutFuture;
 use shared::{BroadcastResponse, BroadcastStatus};
 
-
 use crate::Route;
 use crate::api;
+use crate::auth::RequireLogin;
 
 /// JS 문자열 리터럴로 안전하게 넣는다
 fn js_str(s: &str) -> String {
@@ -52,6 +52,11 @@ enum Studio {
 
 #[component]
 pub fn LiveStudio() -> Element {
+    rsx! { RequireLogin { StudioScreen {} } }
+}
+
+#[component]
+fn StudioScreen() -> Element {
     let mut studio = use_signal(|| Studio::Off);
     let mut title = use_signal(String::new);
     let mut front = use_signal(|| true);
