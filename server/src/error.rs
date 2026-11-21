@@ -1,5 +1,6 @@
 use axum::Json;
 use axum::extract::multipart::MultipartError;
+use axum::extract::{FromRequest, Request};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use shared::ErrorResponse;
@@ -104,5 +105,24 @@ impl From<sea_orm::DbErr> for AppError {
 impl From<std::io::Error> for AppError {
     fn from(e: std::io::Error) -> Self {
         AppError::Internal(e.to_string())
+    }
+}
+
+/// `Json<T>` 대신 쓰는 요청 본문 추출기. JSON 이 아니거나 필드가 맞지 않을 때
+/// axum 기본 응답(영문 텍스트, 415/422) 대신 다른 오류와 같은 형식의 400 을 준다.
+pub struct JsonBody<T>(pub T);
+
+impl<S, T> FromRequest<S> for JsonBody<T>
+where
+    Json<T>: FromRequest<S>,
+    S: Send + Sync,
+{
+    type Rejection = AppError;
+
+    async fn from_request(req: Request, state: &S) -> Result<Self, AppError> {
+        match Json::<T>::from_request(req, state).await {
+            Ok(Json(value)) => Ok(JsonBody(value)),
+            Err(_) => Err(AppError::BadRequest("요청 본문(JSON)이 올바르지 않습니다.".into())),
+        }
     }
 }

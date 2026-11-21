@@ -14,7 +14,7 @@ use crate::api::find;
 use crate::auth_api::CurrentUser;
 use crate::comment::{ensure_author, normalize_body};
 use crate::entity::{comment, user};
-use crate::error::AppError;
+use crate::error::{AppError, JsonBody};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -49,7 +49,7 @@ async fn write(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
     Path(id): Path<i64>,
-    Json(req): Json<CommentRequest>,
+    JsonBody(req): JsonBody<CommentRequest>,
 ) -> Result<Response, AppError> {
     find(&state, id).await?;
     let model = comment::ActiveModel {
@@ -76,7 +76,7 @@ async fn edit(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
     Path(id): Path<i64>,
-    Json(req): Json<CommentRequest>,
+    JsonBody(req): JsonBody<CommentRequest>,
 ) -> Result<Json<CommentResponse>, AppError> {
     let model = find_comment(&state, id).await?;
     ensure_author(model.user_id, user.id)?;

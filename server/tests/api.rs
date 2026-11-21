@@ -270,3 +270,23 @@ async fn 없는_방송을_고치거나_지우면_404() {
         assert_eq!(status, StatusCode::NOT_FOUND);
     }
 }
+
+#[tokio::test]
+async fn 잘못된_json_본문도_오류_형식으로_400() {
+    let app = app().await;
+    let owner = app.signup("owner").await;
+    let created = app.register(&owner, "제목").await;
+    let wrong_field = json("PATCH", &format!("/api/broadcasts/{}", created.id), json!({ "name": "제목 아님" }));
+    let not_json = with_cookie(
+        Request::post("/api/broadcasts/live").header(header::CONTENT_TYPE, "text/plain").body(Body::from("제목")).unwrap(),
+        &owner,
+    );
+    let broken = json("POST", "/api/auth/login", json!({ "username": "owner" }));
+
+    for req in [with_cookie(wrong_field, &owner), not_json, broken] {
+        let (status, headers, body) = app.send(req).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(headers[header::CONTENT_TYPE], "application/json");
+        assert_eq!(serde_json::from_slice::<ErrorResponse>(&body).unwrap().detail, "요청 본문(JSON)이 올바르지 않습니다.");
+    }
+}

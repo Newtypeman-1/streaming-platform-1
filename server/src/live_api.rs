@@ -14,7 +14,7 @@ use crate::api::{find, to_response};
 use crate::auth_api::CurrentUser;
 use crate::broadcast::{ensure_owner, normalize_title};
 use crate::entity::broadcast;
-use crate::error::AppError;
+use crate::error::{AppError, JsonBody};
 use crate::live::{dropped_streams, ensure_live, media_path, verify_stream_key};
 use crate::media::Direction;
 
@@ -37,7 +37,7 @@ fn sdp(answer: String) -> Response {
 async fn start(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
-    Json(req): Json<StartLiveRequest>,
+    JsonBody(req): JsonBody<StartLiveRequest>,
 ) -> Result<Response, AppError> {
     let stream_key = uuid::Uuid::new_v4().simple().to_string();
     let model = broadcast::ActiveModel {

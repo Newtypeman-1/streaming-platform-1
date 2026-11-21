@@ -16,7 +16,7 @@ use crate::auth::{
     normalize_username, session_cookie, session_token_from_cookie, validate_password, verify_password,
 };
 use crate::entity::{session, user};
-use crate::error::AppError;
+use crate::error::{AppError, JsonBody};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -72,7 +72,7 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> 
     tokio::task::spawn_blocking(f).await.map_err(|e| AppError::Internal(e.to_string()))
 }
 
-async fn signup(State(state): State<AppState>, Json(req): Json<Credentials>) -> Result<Response, AppError> {
+async fn signup(State(state): State<AppState>, JsonBody(req): JsonBody<Credentials>) -> Result<Response, AppError> {
     let username = normalize_username(&req.username)?;
     validate_password(&req.password)?;
     let password_hash = blocking(move || hash_password(&req.password)).await?;
@@ -94,7 +94,7 @@ async fn signup(State(state): State<AppState>, Json(req): Json<Credentials>) -> 
     logged_in(&state, StatusCode::CREATED, user).await
 }
 
-async fn login(State(state): State<AppState>, Json(req): Json<Credentials>) -> Result<Response, AppError> {
+async fn login(State(state): State<AppState>, JsonBody(req): JsonBody<Credentials>) -> Result<Response, AppError> {
     // 형식이 틀린 아이디도 "없는 아이디"와 같은 응답을 준다
     let found = match normalize_username(&req.username) {
         Ok(username) => user::Entity::find().filter(user::Column::Username.eq(username)).one(&state.db).await?,

@@ -15,7 +15,7 @@ use crate::AppState;
 use crate::auth_api::CurrentUser;
 use crate::broadcast::{BroadcastError, ensure_deletable, ensure_owner, normalize_title, validate_video_content_type};
 use crate::entity::{broadcast, user};
-use crate::error::AppError;
+use crate::error::{AppError, JsonBody};
 
 const MAX_UPLOAD_BYTES: usize = 2 * 1024 * 1024 * 1024; // 2GB
 
@@ -150,7 +150,7 @@ async fn update(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
     Path(id): Path<i64>,
-    Json(req): Json<UpdateBroadcastRequest>,
+    JsonBody(req): JsonBody<UpdateBroadcastRequest>,
 ) -> Result<Json<BroadcastResponse>, AppError> {
     let model = find(&state, id).await?;
     ensure_owner(model.user_id, user.id)?;
