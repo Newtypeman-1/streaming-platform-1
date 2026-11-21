@@ -129,3 +129,52 @@ pub mod comment {
 
     impl ActiveModelBehavior for ActiveModel {}
 }
+
+pub mod donation {
+    use sea_orm::entity::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "donation")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i64,
+        /// 결제 서비스에 보내는 주문번호. 서버가 만든다.
+        #[sea_orm(unique)]
+        pub order_id: String,
+        /// 방송을 지우면 NULL
+        pub broadcast_id: Option<i64>,
+        pub donor_id: i64,
+        /// 주문할 때의 방송 소유자
+        pub recipient_id: i64,
+        pub amount: i64,
+        /// `shared::DonationStatus` 의 문자열
+        pub status: String,
+        /// 결제 서비스가 발급한 결제 키. 승인을 확인한 뒤에만 있다.
+        #[sea_orm(unique)]
+        pub payment_key: Option<String>,
+        pub failure: Option<String>,
+        pub created_at: DateTimeWithTimeZone,
+        pub approved_at: Option<DateTimeWithTimeZone>,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {
+        #[sea_orm(belongs_to = "super::user::Entity", from = "Column::DonorId", to = "super::user::Column::Id")]
+        Donor,
+    }
+
+    impl Related<super::user::Entity> for Entity {
+        fn to() -> RelationDef {
+            Relation::Donor.def()
+        }
+    }
+
+    impl ActiveModelBehavior for ActiveModel {}
+
+    impl Model {
+        pub fn status(&self) -> shared::DonationStatus {
+            // DB 에는 이 서버가 쓴 값만 들어간다
+            shared::DonationStatus::parse(&self.status).expect("알 수 없는 후원 상태")
+        }
+    }
+}

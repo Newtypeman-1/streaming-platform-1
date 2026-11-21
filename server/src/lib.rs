@@ -4,12 +4,15 @@ pub mod auth_api;
 pub mod broadcast;
 pub mod comment;
 pub mod comment_api;
+pub mod donation;
+pub mod donation_api;
 pub mod entity;
 pub mod error;
 pub mod live;
 pub mod live_api;
 pub mod media;
 pub mod migration;
+pub mod payment;
 pub mod storage;
 
 use std::path::Path;
@@ -20,6 +23,7 @@ use sea_orm_migration::MigratorTrait;
 pub use api::router;
 pub use live_api::end_dropped_streams;
 pub use media::MediaServer;
+pub use payment::PaymentGateway;
 use storage::LocalVideoStorage;
 
 #[derive(Clone)]
@@ -27,6 +31,7 @@ pub struct AppState {
     pub db: DatabaseConnection,
     pub storage: LocalVideoStorage,
     pub media: MediaServer,
+    pub payments: PaymentGateway,
 }
 
 impl AppState {
@@ -35,10 +40,11 @@ impl AppState {
         database_url: &str,
         storage_dir: impl AsRef<Path>,
         media: MediaServer,
+        payments: PaymentGateway,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let db = Database::connect(database_url).await?;
         migration::Migrator::up(&db, None).await?;
         let storage = LocalVideoStorage::new(storage_dir)?;
-        Ok(Self { db, storage, media })
+        Ok(Self { db, storage, media, payments })
     }
 }

@@ -8,7 +8,7 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
 use axum::routing;
 use http_body_util::BodyExt;
-use server::{AppState, MediaServer, router};
+use server::{AppState, MediaServer, PaymentGateway, router};
 use shared::{BroadcastResponse, ErrorResponse};
 use testcontainers_modules::postgres::Postgres;
 use testcontainers_modules::testcontainers::runners::AsyncRunner;
@@ -27,7 +27,7 @@ pub async fn app() -> TestApp {
     let db = start_postgres().await;
     let storage_dir = tempfile::tempdir().unwrap();
     let media = FakeMedia::start().await;
-    let state = AppState::connect(&db_url(&db).await, storage_dir.path(), media.server()).await.unwrap();
+    let state = AppState::connect(&db_url(&db).await, storage_dir.path(), media.server(), payments()).await.unwrap();
     TestApp { router: router(state.clone()), state, storage_dir, media, db }
 }
 
@@ -49,6 +49,12 @@ pub async fn db_url(db: &ContainerAsync<Postgres>) -> String {
         db.get_host().await.unwrap(),
         db.get_host_port_ipv4(5432).await.unwrap()
     )
+}
+
+pub const CLIENT_KEY: &str = "test_ck_fake";
+
+pub fn payments() -> PaymentGateway {
+    PaymentGateway::new(CLIENT_KEY)
 }
 
 /// 아무 것도 듣고 있지 않은 주소 → 미디어 서버가 꺼진 상황

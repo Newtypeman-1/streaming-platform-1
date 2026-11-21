@@ -30,6 +30,7 @@ pub fn router(state: AppState) -> Router {
         .merge(crate::live_api::routes())
         .merge(crate::auth_api::routes())
         .merge(crate::comment_api::routes())
+        .merge(crate::donation_api::routes())
         .with_state(state)
 }
 

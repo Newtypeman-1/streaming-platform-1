@@ -126,3 +126,9 @@ where
         }
     }
 }
+
+impl From<crate::donation::DonationError> for AppError {
+    fn from(e: crate::donation::DonationError) -> Self {
+        AppError::BadRequest(e.to_string())
+    }
+}

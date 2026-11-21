@@ -130,3 +130,58 @@ pub fn comments_url(broadcast_id: i64) -> String {
 pub fn comment_url(id: i64) -> String {
     format!("/api/comments/{id}")
 }
+
+/// 후원 상태. 결제 승인을 서버가 확인해야 `Done` 이 된다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DonationStatus {
+    /// 주문만 만들고 아직 결제 승인 전
+    Pending,
+    Done,
+    Failed,
+    /// 구매자가 결제창을 닫았다
+    Canceled,
+}
+
+impl DonationStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Done => "done",
+            Self::Failed => "failed",
+            Self::Canceled => "canceled",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        [Self::Pending, Self::Done, Self::Failed, Self::Canceled].into_iter().find(|status| status.as_str() == s)
+    }
+}
+
+/// 후원 주문 요청. 받는 사람은 방송 소유자로 서버가 정한다.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DonationRequest {
+    /// 원 단위
+    pub amount: i64,
+}
+
+/// 후원 주문. 후원한 본인만 받는다. 결제창은 `order_id`·`amount`·`order_name` 과 `client_key` 로 띄운다.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DonationOrderResponse {
+    pub order_id: String,
+    pub broadcast_id: Option<i64>,
+    pub recipient: UserResponse,
+    pub amount: i64,
+    pub order_name: String,
+    pub status: DonationStatus,
+    /// 결제 서비스(토스페이먼츠) 클라이언트 키. 브라우저에 공개되는 값이다.
+    pub client_key: String,
+    /// 실패·취소 사유
+    pub failure: Option<String>,
+}
+
+/// 후원 주문(POST, 로그인)
+pub fn donations_url(broadcast_id: i64) -> String {
+    format!("/api/broadcasts/{broadcast_id}/donations")
+}

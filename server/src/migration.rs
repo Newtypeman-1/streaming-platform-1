@@ -13,7 +13,91 @@ impl MigratorTrait for Migrator {
             Box::new(m20261121_000001_add_users::Migration),
             Box::new(m20261121_000002_add_broadcast_owner::Migration),
             Box::new(m20261121_000003_add_comment::Migration),
+            Box::new(m20261121_000004_add_donation::Migration),
         ]
+    }
+}
+
+/// 4단계: 후원. 주문 하나가 한 행이고, 결제 승인을 확인하면 status 가 done 이 된다.
+/// 방송을 지워도 후원 기록은 남긴다(broadcast_id 만 NULL).
+mod m20261121_000004_add_donation {
+    use super::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261121_000004_add_donation"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .create_table(
+                    Table::create()
+                        .table(Donation::Table)
+                        .col(big_pk_auto(Donation::Id))
+                        .col(string_len_uniq(Donation::OrderId, 64))
+                        .col(big_integer_null(Donation::BroadcastId))
+                        .col(big_integer(Donation::DonorId))
+                        .col(big_integer(Donation::RecipientId))
+                        .col(big_integer(Donation::Amount))
+                        .col(string_len(Donation::Status, 16))
+                        // 같은 결제가 두 주문에 적립되지 않도록
+                        .col(string_len_null(Donation::PaymentKey, 200).unique_key())
+                        .col(string_null(Donation::Failure))
+                        .col(timestamp_with_time_zone(Donation::CreatedAt))
+                        .col(timestamp_with_time_zone_null(Donation::ApprovedAt))
+                        .foreign_key(
+                            ForeignKey::create()
+                                .from(Donation::Table, Donation::BroadcastId)
+                                .to(Broadcast::Table, Broadcast::Id)
+                                .on_delete(ForeignKeyAction::SetNull),
+                        )
+                        .foreign_key(ForeignKey::create().from(Donation::Table, Donation::DonorId).to(Users::Table, Users::Id))
+                        .foreign_key(ForeignKey::create().from(Donation::Table, Donation::RecipientId).to(Users::Table, Users::Id))
+                        .to_owned(),
+                )
+                .await?;
+            // 방송별 내역·합계 조회용
+            manager
+                .create_index(Index::create().name("idx_donation_broadcast").table(Donation::Table).col(Donation::BroadcastId).to_owned())
+                .await
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.drop_table(Table::drop().table(Donation::Table).to_owned()).await
+        }
+    }
+
+    #[derive(DeriveIden)]
+    enum Donation {
+        Table,
+        Id,
+        OrderId,
+        BroadcastId,
+        DonorId,
+        RecipientId,
+        Amount,
+        Status,
+        PaymentKey,
+        Failure,
+        CreatedAt,
+        ApprovedAt,
+    }
+
+    #[derive(DeriveIden)]
+    enum Broadcast {
+        Table,
+        Id,
+    }
+
+    #[derive(DeriveIden)]
+    enum Users {
+        Table,
+        Id,
     }
 }
 

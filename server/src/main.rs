@@ -1,7 +1,7 @@
 use std::env;
 use std::time::Duration;
 
-use server::{AppState, MediaServer, end_dropped_streams, router};
+use server::{AppState, MediaServer, PaymentGateway, end_dropped_streams, router};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
@@ -24,7 +24,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let media_url = env::var("MEDIAMTX_URL").unwrap_or_else(|_| "http://localhost:8889".into());
     let media_api_url = env::var("MEDIAMTX_API_URL").unwrap_or_else(|_| "http://localhost:9997".into());
 
-    let state = AppState::connect(&database_url, &storage_dir, MediaServer::new(&media_url, &media_api_url)).await?;
+    let toss_client_key = env::var("TOSS_CLIENT_KEY").unwrap_or_default();
+    if toss_client_key.is_empty() {
+        tracing::warn!("TOSS_CLIENT_KEY 가 없어 후원 결제창을 띄울 수 없습니다");
+    }
+
+    let state = AppState::connect(
+        &database_url,
+        &storage_dir,
+        MediaServer::new(&media_url, &media_api_url),
+        PaymentGateway::new(&toss_client_key),
+    )
+    .await?;
 
     let sweeper_state = state.clone();
     tokio::spawn(async move {
