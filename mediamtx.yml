@@ -1,0 +1,35 @@
+# MediaMTX 설정. 여기에 없는 항목은 MediaMTX 기본값을 쓴다.
+# 휴대폰 브라우저 → (WHIP) → API 서버 → MediaMTX → (WHEP) → API 서버 → 시청자 브라우저
+# 신호(SDP) 교환은 항상 API 서버를 거치고, 영상/음성(ICE, 8189)만 브라우저와 MediaMTX가 직접 주고받는다.
+logLevel: info
+
+# 브라우저 WebRTC만 쓴다
+rtsp: no
+rtmp: no
+hls: no
+srt: no
+moq: no
+
+# API 서버가 방송이 실제로 송출 중인지 확인할 때 쓴다
+api: yes
+
+webrtc: yes
+webrtcAddress: :8889
+webrtcLocalUDPAddress: :8189
+# UDP가 막힌 네트워크를 위해 같은 포트로 TCP도 연다
+webrtcLocalTCPAddress: :8189
+# 컨테이너 내부 IP는 바깥에서 쓸 수 없으므로 알리지 않는다.
+# 대신 docker-compose 가 MTX_WEBRTCADDITIONALHOSTS 로 접속 가능한 주소를 넣는다.
+webrtcIPsFromInterfaces: no
+
+# 8889(신호)·9997(API)는 docker-compose 에서 127.0.0.1 에만 열려 있어 API 서버만 접근할 수 있다.
+# 송출 키 검사는 API 서버가 하므로 MediaMTX 자체는 모두 허용한다.
+authInternalUsers:
+  - user: any
+    permissions:
+      - action: publish
+      - action: read
+      - action: api
+
+paths:
+  all_others:

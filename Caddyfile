@@ -1,0 +1,11 @@
+# 휴대폰에서 https://<PUBLIC_HOST>:3443 으로 접속하면 웹 개발 서버(dx serve, 3300)로 넘겨준다.
+# 인증서는 Caddy 내부 CA가 발급하므로 브라우저에 "안전하지 않음" 경고가 한 번 뜬다.
+{
+	# IP 주소로 접속하면 브라우저가 SNI를 보내지 않으므로 기본 인증서를 지정한다
+	default_sni {$PUBLIC_HOST}
+}
+
+{$PUBLIC_HOST}:3443 {
+	tls internal
+	reverse_proxy host.docker.internal:3300
+}

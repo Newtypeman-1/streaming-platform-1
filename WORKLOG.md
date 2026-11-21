@@ -13,6 +13,7 @@
 | 백엔드 | axum, SeaORM |
 | DB | PostgreSQL 17 (Docker) |
 | 프론트엔드 | Dioxus (웹, WASM) |
+| 라이브 | WebRTC (WHIP 송출 / WHEP 시청), MediaMTX (Docker) |
 | 테스트 | cargo test, Testcontainers |
 
 ## 1단계: 녹화 영상 업로드와 재생
@@ -66,3 +67,9 @@
 - 작업: README의 웹 실행 포트와 접속 주소를 3300으로 변경
 - 이유: 3000번은 Node.js 개발 서버가 쓰고 있어 겹침
 - 결과: README의 `dx serve --port`와 접속 주소가 3300으로 통일됨. 3300에서 웹이 뜨고 `/api` 프록시가 동작하는 것 확인
+
+### 002-02 라이브 중계 서버 MediaMTX와 휴대폰용 HTTPS(Caddy) 구성
+- [링크](https://github.com/Newtypeman-1/streaming-platform-1/commit/002-02)
+- 작업: docker-compose에 MediaMTX 1.21.4와 Caddy(`phone` 프로필) 추가, `mediamtx.yml`·`Caddyfile` 작성, `.env.example`에 `PUBLIC_HOST`·`MEDIAMTX_URL`·`MEDIAMTX_API_URL` 추가, README 환경변수·실행 순서 갱신
+- 이유: 휴대폰 브라우저 WebRTC 송출을 중계할 미디어 서버가 필요함. 브라우저는 HTTPS(또는 localhost)에서만 카메라를 허용하므로 휴대폰용 HTTPS 주소도 필요함. MediaMTX 신호(8889)·API(9997) 포트는 127.0.0.1에만 열어 API 서버만 쓰게 함
+- 결과: MediaMTX 기동 후 ffmpeg WHIP 송출 시 API에서 `ready: true` 확인. `https://<LAN IP>:3443` 접속 200 확인(IP 접속은 SNI가 없어 `default_sni` 지정이 필요했음)

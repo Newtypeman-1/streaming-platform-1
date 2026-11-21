@@ -8,6 +8,7 @@
 | 백엔드 | axum 0.8, SeaORM 2.0, tokio |
 | DB | PostgreSQL 17 (Docker Compose) |
 | 프론트엔드 | Dioxus 0.7 (웹, WASM) |
+| 라이브 | 브라우저 WebRTC (WHIP 송출 / WHEP 시청), MediaMTX 1.21 |
 | 테스트 | cargo test, Testcontainers(PostgreSQL) |
 
 ```
@@ -15,7 +16,9 @@
 ├── server/             axum API 서버 (+ DB 마이그레이션)
 ├── web/                Dioxus 웹 클라이언트
 ├── shared/             서버와 웹이 함께 쓰는 API 타입
-├── docker-compose.yml  로컬 PostgreSQL
+├── docker-compose.yml  로컬 PostgreSQL, MediaMTX(라이브 중계), Caddy(휴대폰용 HTTPS)
+├── mediamtx.yml        MediaMTX 설정
+├── Caddyfile           휴대폰용 HTTPS 프록시 설정
 ├── .env.example        환경변수 예시
 └── storage/videos/     업로드된 영상 저장 위치 (git 제외, 실행 시 자동 생성)
 ```
@@ -87,15 +90,30 @@ cp .env.example .env
 | `DATABASE_URL` | 서버가 접속할 DB 주소 | `postgres://streaming:change-me@localhost:5432/streaming` |
 | `SERVER_PORT` | API 서버 포트 | `8000` |
 | `VIDEO_STORAGE_DIR` | 영상 저장 디렉터리 (상대경로는 실행 위치 기준) | `storage/videos` |
+| `PUBLIC_HOST` | 휴대폰이 접속할 이 컴퓨터의 LAN IP. MediaMTX 영상 주소와 HTTPS 프록시가 씁니다 | `192.168.0.10` |
+| `MEDIAMTX_URL` | API 서버가 접속할 MediaMTX WebRTC 주소 | `http://localhost:8889` |
+| `MEDIAMTX_API_URL` | API 서버가 접속할 MediaMTX Control API 주소 | `http://localhost:9997` |
 
 서버는 실행 위치부터 상위 폴더로 올라가며 `.env`를 찾아 읽습니다. 그래서 따로 `export`하지 않아도 됩니다.
 
+LAN IP는 macOS에서 아래 명령으로 확인합니다. 와이파이를 바꾸면 IP도 바뀝니다. 그때는 `.env`를 고치고 `docker compose up -d`를 다시 실행합니다.
+
+```bash
+ipconfig getifaddr en0
+```
+
 > 이미 사용 중인 포트가 있으면 `.env`에서 `POSTGRES_PORT`, `DATABASE_URL`, `SERVER_PORT`를 바꿉니다. `SERVER_PORT`를 바꿨다면 `web/Dioxus.toml`의 `[[web.proxy]] backend` 주소도 같은 포트로 맞춥니다.
 
-### 2) PostgreSQL 실행
+### 2) PostgreSQL · MediaMTX 실행
 
 ```bash
 docker compose up -d
+```
+
+휴대폰으로 송출하려면 HTTPS 프록시도 함께 켭니다. 이유는 아래 "휴대폰 접속 환경"에 있습니다.
+
+```bash
+docker compose --profile phone up -d
 ```
 
 ### 3) API 서버 실행 (기본 http://localhost:8000)
@@ -149,4 +167,4 @@ Testcontainers가 PostgreSQL 컨테이너를 띄우므로 Docker가 실행 중�
    - 등록 화면에서 제목을 공백만 넣고 등록하면 "제목을 입력해주세요."가 표시됩니다.
    - 실패한 요청의 영상은 `storage/videos`에 남지 않습니다.
 
-> 데이터를 완전히 지우려면 `docker compose down -v`로 DB 볼륨을 삭제하고 `storage/` 폴더를 지웁니다.
+> 데이터를 완전히 지우려면 `docker compose --profile phone down -v`로 DB 볼륨을 삭제하고 `storage/` 폴더를 지웁니다.

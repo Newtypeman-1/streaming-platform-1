@@ -11,5 +11,35 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
+  # 라이브 영상 중계 서버 (WebRTC WHIP 송출 / WHEP 시청)
+  mediamtx:
+    image: bluenviron/mediamtx:1.21.4
+    container_name: streaming-platform-mediamtx
+    environment:
+      # 브라우저가 영상을 주고받을 때 접속할 이 컴퓨터의 주소 (ICE 후보)
+      MTX_WEBRTCADDITIONALHOSTS: 127.0.0.1,${PUBLIC_HOST:-127.0.0.1}
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+    ports:
+      - "127.0.0.1:8889:8889"     # WHIP/WHEP 신호 - API 서버만 사용
+      - "127.0.0.1:9997:9997"     # MediaMTX API - API 서버만 사용
+      - "8189:8189/udp"           # 영상/음성 (WebRTC)
+      - "8189:8189/tcp"
+
+  # 휴대폰 접속용 HTTPS. 브라우저는 HTTPS(또는 localhost)에서만 카메라·마이크를 허용한다.
+  # docker compose --profile phone up -d 로 켠다.
+  https:
+    image: caddy:2
+    container_name: streaming-platform-https
+    profiles: [phone]
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:-127.0.0.1}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    ports:
+      - "3443:3443"
+
 volumes:
   postgres-data:
+  caddy-data:
