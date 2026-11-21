@@ -92,7 +92,7 @@ window.live = (() => {
       // 탭을 닫거나 다른 페이지로 가면 방송을 끝낸다 (keepalive: 페이지가 닫혀도 요청은 끝까지 간다)
       const onPageHide = () => this.stopPublish(true);
       window.addEventListener('pagehide', onPageHide);
-      publisher = { pc, endUrl, key, onPageHide };
+      publisher = { pc, endUrl, onPageHide };
       try {
         await negotiate(pc, whipUrl, key);
       } catch (e) {
@@ -107,12 +107,13 @@ window.live = (() => {
     // sendEnd: 서버에 종료 요청까지 보낼지 (화면을 떠날 때)
     stopPublish(sendEnd) {
       if (!publisher) return;
-      const { pc, endUrl, key, onPageHide } = publisher;
+      const { pc, endUrl, onPageHide } = publisher;
       publisher = null;
       window.removeEventListener('pagehide', onPageHide);
       pc.close();
       if (sendEnd) {
-        fetch(endUrl, { method: 'POST', headers: { Authorization: 'Bearer ' + key }, keepalive: true }).catch(() => {});
+        // 같은 출처 요청이라 로그인 쿠키가 함께 간다. 서버가 방송 소유자인지 확인한다.
+        fetch(endUrl, { method: 'POST', keepalive: true }).catch(() => {});
       }
       this.stopPreview();
     },

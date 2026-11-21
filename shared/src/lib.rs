@@ -33,12 +33,20 @@ pub struct BroadcastResponse {
     pub id: i64,
     pub title: String,
     pub status: BroadcastStatus,
+    /// 방송한 사람. 3단계(로그인) 이전에 만든 방송은 없다.
+    pub owner: Option<UserResponse>,
     /// 녹화 영상 재생 주소 (Range 요청 지원). 라이브 방송은 없다.
     pub video_url: Option<String>,
     /// RFC 3339 (예: 2026-11-19T10:00:00Z)
     pub created_at: String,
     /// 라이브가 끝난 시각
     pub ended_at: Option<String>,
+}
+
+/// 방송 정보 수정 (소유자만)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UpdateBroadcastRequest {
+    pub title: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -89,7 +97,7 @@ pub fn whep_url(id: i64) -> String {
     format!("/api/broadcasts/{id}/whep")
 }
 
-/// 라이브 종료. `Authorization: Bearer <송출 키>`.
+/// 라이브 종료. 방송 소유자로 로그인해 있어야 한다.
 pub fn end_url(id: i64) -> String {
     format!("/api/broadcasts/{id}/end")
 }

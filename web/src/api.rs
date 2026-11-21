@@ -53,9 +53,9 @@ pub async fn start_live(title: &str) -> Result<StartLiveResponse, String> {
     parse(res).await
 }
 
-pub async fn end_live(id: i64, stream_key: &str) -> Result<BroadcastResponse, String> {
+/// 라이브 종료. 로그인 쿠키로 소유자인지 서버가 확인한다.
+pub async fn end_live(id: i64) -> Result<BroadcastResponse, String> {
     let res = Request::post(&shared::end_url(id))
-        .header("Authorization", &format!("Bearer {stream_key}"))
         .send()
         .await
         .map_err(|e| e.to_string())?;

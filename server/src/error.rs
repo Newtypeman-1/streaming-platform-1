@@ -13,6 +13,7 @@ use crate::media::MediaError;
 pub enum AppError {
     BadRequest(String),
     Unauthorized(String),
+    Forbidden(String),
     NotFound(String),
     Conflict(String),
     BadGateway(String),
@@ -24,6 +25,7 @@ impl IntoResponse for AppError {
         let (status, detail) = match self {
             AppError::BadRequest(detail) => (StatusCode::BAD_REQUEST, detail),
             AppError::Unauthorized(detail) => (StatusCode::UNAUTHORIZED, detail),
+            AppError::Forbidden(detail) => (StatusCode::FORBIDDEN, detail),
             AppError::NotFound(detail) => (StatusCode::NOT_FOUND, detail),
             AppError::Conflict(detail) => (StatusCode::CONFLICT, detail),
             AppError::BadGateway(detail) => {
@@ -51,7 +53,11 @@ impl From<AuthError> for AppError {
 
 impl From<BroadcastError> for AppError {
     fn from(e: BroadcastError) -> Self {
-        AppError::BadRequest(e.to_string())
+        match e {
+            BroadcastError::NotOwner => AppError::Forbidden(e.to_string()),
+            BroadcastError::StillLive => AppError::Conflict(e.to_string()),
+            _ => AppError::BadRequest(e.to_string()),
+        }
     }
 }
 

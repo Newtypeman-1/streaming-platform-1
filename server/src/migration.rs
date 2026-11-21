@@ -11,7 +11,60 @@ impl MigratorTrait for Migrator {
             Box::new(m20261119_000001_create_broadcast::Migration),
             Box::new(m20261120_000001_add_live::Migration),
             Box::new(m20261121_000001_add_users::Migration),
+            Box::new(m20261121_000002_add_broadcast_owner::Migration),
         ]
+    }
+}
+
+/// 3단계: 방송 소유자. 이전 단계에서 만든 방송은 소유자가 없다(NULL).
+mod m20261121_000002_add_broadcast_owner {
+    use super::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261121_000002_add_broadcast_owner"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(Broadcast::Table)
+                        .add_column(big_integer_null(Broadcast::UserId))
+                        .add_foreign_key(
+                            TableForeignKey::new()
+                                .name("fk_broadcast_user")
+                                .from_tbl(Broadcast::Table)
+                                .from_col(Broadcast::UserId)
+                                .to_tbl(Users::Table)
+                                .to_col(Users::Id)
+                                .on_delete(ForeignKeyAction::SetNull),
+                        )
+                        .to_owned(),
+                )
+                .await
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.alter_table(Table::alter().table(Broadcast::Table).drop_column(Broadcast::UserId).to_owned()).await
+        }
+    }
+
+    #[derive(DeriveIden)]
+    enum Broadcast {
+        Table,
+        UserId,
+    }
+
+    #[derive(DeriveIden)]
+    enum Users {
+        Table,
+        Id,
     }
 }
 

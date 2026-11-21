@@ -16,10 +16,21 @@ pub mod broadcast {
         pub stream_key: Option<String>,
         pub created_at: DateTimeWithTimeZone,
         pub ended_at: Option<DateTimeWithTimeZone>,
+        /// 방송한 사람. 3단계(로그인) 이전에 만든 방송은 없다.
+        pub user_id: Option<i64>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub enum Relation {
+        #[sea_orm(belongs_to = "super::user::Entity", from = "Column::UserId", to = "super::user::Column::Id")]
+        User,
+    }
+
+    impl Related<super::user::Entity> for Entity {
+        fn to() -> RelationDef {
+            Relation::User.def()
+        }
+    }
 
     impl ActiveModelBehavior for ActiveModel {}
 

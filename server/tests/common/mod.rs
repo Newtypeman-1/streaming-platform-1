@@ -178,9 +178,9 @@ pub fn video_part(bytes: &[u8]) -> Part<'_> {
 }
 
 impl TestApp {
-    /// 녹화 방송 등록
-    pub async fn register(&self, title: &str) -> BroadcastResponse {
-        let (status, _, body) = self.send(multipart(&[Part::Text("title", title), video_part(VIDEO)])).await;
+    /// `cookie` 사용자로 녹화 방송 등록
+    pub async fn register(&self, cookie: &str, title: &str) -> BroadcastResponse {
+        let (status, _, body) = self.send(with_cookie(multipart(&[Part::Text("title", title), video_part(VIDEO)]), cookie)).await;
         assert_eq!(status, StatusCode::CREATED);
         serde_json::from_slice(&body).unwrap()
     }

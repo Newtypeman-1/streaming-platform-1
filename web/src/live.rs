@@ -45,7 +45,7 @@ enum Studio {
     Off,
     Preview,
     Starting,
-    Live { id: i64, stream_key: String, connected: bool, unstable: bool },
+    Live { id: i64, connected: bool, unstable: bool },
     Ending,
     Ended(BroadcastResponse),
 }
@@ -74,10 +74,10 @@ pub fn LiveStudio() -> Element {
         }
     };
 
-    let end = move |id: i64, stream_key: String, reason: Option<String>| async move {
+    let end = move |id: i64, reason: Option<String>| async move {
         studio.set(Studio::Ending);
         let _ = call_js("window.live.stopPublish(false)").await;
-        match api::end_live(id, &stream_key).await {
+        match api::end_live(id).await {
             Ok(ended) => studio.set(Studio::Ended(ended)),
             // 종료 요청이 실패해도 송출이 끊겼으니 서버가 곧 종료 처리한다
             Err(e) => error.set(Some(e)),
@@ -101,7 +101,7 @@ pub fn LiveStudio() -> Element {
         };
         let id = started.broadcast.id;
         let key = started.stream_key;
-        studio.set(Studio::Live { id, stream_key: key.clone(), connected: false, unstable: false });
+        studio.set(Studio::Live { id, connected: false, unstable: false });
 
         let code = format!(
             "await window.live.publish({}, {}, {}, send)",
@@ -110,18 +110,18 @@ pub fn LiveStudio() -> Element {
             js_str(&key)
         );
         listen_js(code, move |message| {
-            let Studio::Live { id, stream_key, .. } = studio() else { return };
+            let Studio::Live { id, .. } = studio() else { return };
             match message.as_str() {
-                "connected" => studio.set(Studio::Live { id, stream_key, connected: true, unstable: false }),
-                "unstable" => studio.set(Studio::Live { id, stream_key, connected: true, unstable: true }),
+                "connected" => studio.set(Studio::Live { id, connected: true, unstable: false }),
+                "unstable" => studio.set(Studio::Live { id, connected: true, unstable: true }),
                 "disconnected" => {
-                    spawn(end(id, stream_key, Some("송출 연결이 끊겨 방송을 종료했습니다.".into())));
+                    spawn(end(id, Some("송출 연결이 끊겨 방송을 종료했습니다.".into())));
                 }
                 failed => {
                     // 송출 연결에 실패: 만든 방송은 지우지 않고 종료로 남긴다. 미리보기는 그대로라 다시 시작할 수 있다.
                     let reason = failed.strip_prefix("error:").unwrap_or(failed).to_string();
                     spawn(async move {
-                        let _ = api::end_live(id, &stream_key).await;
+                        let _ = api::end_live(id).await;
                         error.set(Some(reason));
                         studio.set(Studio::Preview);
                     });
@@ -186,11 +186,11 @@ pub fn LiveStudio() -> Element {
                         }
                     }
                 },
-                Studio::Live { id, stream_key, .. } => rsx! {
+                Studio::Live { id, .. } => rsx! {
                     div { class: "row",
                         button {
                             class: "button danger",
-                            onclick: move |_| end(id, stream_key.clone(), None),
+                            onclick: move |_| end(id, None),
                             "방송 종료"
                         }
                         Link { to: Route::BroadcastDetail { id }, new_tab: true, class: "meta", "시청 화면 열기 ↗" }

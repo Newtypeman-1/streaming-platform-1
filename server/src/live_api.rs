@@ -7,11 +7,12 @@ use axum::routing::post;
 use axum::{Json, Router};
 use chrono::{Duration, Utc};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, Set};
-use shared::{BroadcastStatus, StartLiveRequest, StartLiveResponse};
+use shared::{BroadcastResponse, BroadcastStatus, StartLiveRequest, StartLiveResponse};
 
 use crate::AppState;
 use crate::api::{find, to_response};
-use crate::broadcast::normalize_title;
+use crate::auth_api::CurrentUser;
+use crate::broadcast::{ensure_owner, normalize_title};
 use crate::entity::broadcast;
 use crate::error::AppError;
 use crate::live::{dropped_streams, ensure_live, media_path, verify_stream_key};
@@ -33,22 +34,29 @@ fn sdp(answer: String) -> Response {
     (StatusCode::CREATED, [(header::CONTENT_TYPE, "application/sdp")], answer).into_response()
 }
 
-async fn start(State(state): State<AppState>, Json(req): Json<StartLiveRequest>) -> Result<Response, AppError> {
+async fn start(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Json(req): Json<StartLiveRequest>,
+) -> Result<Response, AppError> {
     let stream_key = uuid::Uuid::new_v4().simple().to_string();
     let model = broadcast::ActiveModel {
         title: Set(normalize_title(&req.title)?),
         status: Set(BroadcastStatus::Live.as_str().into()),
         stream_key: Set(Some(stream_key.clone())),
+        user_id: Set(Some(user.id)),
         created_at: Set(Utc::now().into()),
         ..Default::default()
     }
     .insert(&state.db)
     .await?;
     let location = format!("/api/broadcasts/{}", model.id);
-    let body = StartLiveResponse { broadcast: to_response(model), stream_key };
+    let body = StartLiveResponse { broadcast: to_response(model, Some(user)), stream_key };
     Ok((StatusCode::CREATED, [(header::LOCATION, location)], Json(body)).into_response())
 }
 
+/// 송출은 송출 키로 확인한다. 키는 라이브를 시작한 소유자에게만 한 번 발급된다.
+/// (브라우저가 아닌 송출 프로그램(ffmpeg 등)도 쓸 수 있도록 로그인 쿠키 대신 키를 쓴다)
 async fn publish(
     State(state): State<AppState>,
     Path(id): Path<i64>,
@@ -66,13 +74,16 @@ async fn watch(State(state): State<AppState>, Path(id): Path<i64>, offer: String
     Ok(sdp(state.media.exchange_sdp(&media_path(id), Direction::Read, offer).await?))
 }
 
-async fn end(State(state): State<AppState>, Path(id): Path<i64>, headers: HeaderMap) -> Result<Response, AppError> {
+/// 종료는 소유자 로그인으로만 한다.
+async fn end(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(id): Path<i64>,
+) -> Result<Json<BroadcastResponse>, AppError> {
     let model = find(&state, id).await?;
-    verify_stream_key(model.stream_key.as_deref(), bearer(&headers))?;
-    if model.status() != BroadcastStatus::Live {
-        return Ok(Json(to_response(model)).into_response());
-    }
-    Ok(Json(to_response(mark_ended(&state, model).await?)).into_response())
+    ensure_owner(model.user_id, user.id)?;
+    let model = if model.status() == BroadcastStatus::Live { mark_ended(&state, model).await? } else { model };
+    Ok(Json(to_response(model, Some(user))))
 }
 
 async fn mark_ended(state: &AppState, model: broadcast::Model) -> Result<broadcast::Model, AppError> {
