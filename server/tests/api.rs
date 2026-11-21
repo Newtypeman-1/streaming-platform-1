@@ -144,7 +144,7 @@ async fn 서버를_다시_띄워도_등록_정보와_영상이_남아있다() {
 
     // 같은 DB, 같은 저장소 디렉터리로 앱 상태를 새로 만든다 (= 서버 재시작)
     let url = common::db_url(&first.db).await;
-    let restarted = router(AppState::connect(&url, first.storage_dir.path(), first.media.server(), common::payments()).await.unwrap());
+    let restarted = router(AppState::connect(&url, first.storage_dir.path(), first.media.server(), common::unreachable_payments()).await.unwrap());
 
     let res = restarted.clone().oneshot(get(&format!("/api/broadcasts/{}", created.id))).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);

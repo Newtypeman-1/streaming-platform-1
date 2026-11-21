@@ -328,7 +328,7 @@ async fn 막_시작한_라이브는_송출_연결을_기다려준다() {
 
 /// 미디어 서버가 잠깐 죽었다고 모든 방송을 끝내면 안 된다.
 async fn media_down(app: &TestApp) -> (axum::Router, AppState) {
-    let state = AppState::connect(&common::db_url(&app.db).await, app.storage_dir.path(), common::unreachable_media(), common::payments())
+    let state = AppState::connect(&common::db_url(&app.db).await, app.storage_dir.path(), common::unreachable_media(), common::unreachable_payments())
         .await
         .unwrap();
     (router(state.clone()), state)

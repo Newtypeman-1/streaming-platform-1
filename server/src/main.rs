@@ -24,16 +24,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let media_url = env::var("MEDIAMTX_URL").unwrap_or_else(|_| "http://localhost:8889".into());
     let media_api_url = env::var("MEDIAMTX_API_URL").unwrap_or_else(|_| "http://localhost:9997".into());
 
+    let toss_api_url = env::var("TOSS_API_URL").unwrap_or_else(|_| "https://api.tosspayments.com".into());
+    let toss_secret_key = env::var("TOSS_SECRET_KEY").unwrap_or_default();
     let toss_client_key = env::var("TOSS_CLIENT_KEY").unwrap_or_default();
-    if toss_client_key.is_empty() {
-        tracing::warn!("TOSS_CLIENT_KEY 가 없어 후원 결제창을 띄울 수 없습니다");
+    if toss_secret_key.is_empty() || toss_client_key.is_empty() {
+        tracing::warn!("TOSS_SECRET_KEY·TOSS_CLIENT_KEY 가 없어 후원 결제를 할 수 없습니다");
     }
 
     let state = AppState::connect(
         &database_url,
         &storage_dir,
         MediaServer::new(&media_url, &media_api_url),
-        PaymentGateway::new(&toss_client_key),
+        PaymentGateway::new(&toss_api_url, &toss_secret_key, &toss_client_key),
     )
     .await?;
 

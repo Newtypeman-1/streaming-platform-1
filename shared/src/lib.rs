@@ -181,7 +181,31 @@ pub struct DonationOrderResponse {
     pub failure: Option<String>,
 }
 
+/// 결제창이 successUrl 로 넘겨 준 값을 그대로 보낸다. 서버가 결제 서비스에 승인을 요청하고 확인한다.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfirmDonationRequest {
+    pub payment_key: String,
+    pub order_id: String,
+    pub amount: i64,
+}
+
+/// 결제창이 failUrl 로 넘겨 준 오류 코드·메시지
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FailDonationRequest {
+    pub code: String,
+    pub message: Option<String>,
+}
+
 /// 후원 주문(POST, 로그인)
 pub fn donations_url(broadcast_id: i64) -> String {
     format!("/api/broadcasts/{broadcast_id}/donations")
+}
+
+/// 결제 승인 확인(POST). 후원한 본인만.
+pub const DONATION_CONFIRM_URL: &str = "/api/donations/confirm";
+
+/// 결제 실패·취소 기록(POST). 후원한 본인만.
+pub fn donation_fail_url(order_id: &str) -> String {
+    format!("/api/donations/{order_id}/fail")
 }

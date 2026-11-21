@@ -1,6 +1,7 @@
 //! 통합 테스트 공용 준비물: 실제 PostgreSQL(Testcontainers), 임시 영상 저장소, 가짜 MediaMTX.
 #![allow(dead_code)]
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use axum::Router;
@@ -20,6 +21,7 @@ pub struct TestApp {
     pub router: Router,
     pub storage_dir: tempfile::TempDir,
     pub media: FakeMedia,
+    pub toss: FakeToss,
     pub db: ContainerAsync<Postgres>,
 }
 
@@ -27,8 +29,9 @@ pub async fn app() -> TestApp {
     let db = start_postgres().await;
     let storage_dir = tempfile::tempdir().unwrap();
     let media = FakeMedia::start().await;
-    let state = AppState::connect(&db_url(&db).await, storage_dir.path(), media.server(), payments()).await.unwrap();
-    TestApp { router: router(state.clone()), state, storage_dir, media, db }
+    let toss = FakeToss::start().await;
+    let state = AppState::connect(&db_url(&db).await, storage_dir.path(), media.server(), toss.gateway()).await.unwrap();
+    TestApp { router: router(state.clone()), state, storage_dir, media, toss, db }
 }
 
 /// 테스트마다 컨테이너를 띄우므로 수십 개가 동시에 뜬다. 그러면 가끔 Docker 가 포트를 연결하지 못한
@@ -52,9 +55,11 @@ pub async fn db_url(db: &ContainerAsync<Postgres>) -> String {
 }
 
 pub const CLIENT_KEY: &str = "test_ck_fake";
+pub const SECRET_KEY: &str = "test_sk_fake";
 
-pub fn payments() -> PaymentGateway {
-    PaymentGateway::new(CLIENT_KEY)
+/// 아무 것도 듣고 있지 않은 주소 → 결제 서비스에 연결할 수 없는 상황
+pub fn unreachable_payments() -> PaymentGateway {
+    PaymentGateway::new("http://127.0.0.1:9", SECRET_KEY, CLIENT_KEY)
 }
 
 /// 아무 것도 듣고 있지 않은 주소 → 미디어 서버가 꺼진 상황
@@ -227,3 +232,90 @@ impl TestApp {
     }
 }
 
+
+/// 토스페이먼츠 결제 API 흉내.
+/// 승인 요청(`POST /v1/payments/confirm`)은 시크릿 키를 확인하고 요청 그대로 승인(DONE)해 기록한다.
+/// 조회(`GET /v1/payments/{paymentKey}`)는 기록한 결제를 돌려준다.
+#[derive(Clone, Default)]
+pub struct FakeToss {
+    pub url: String,
+    /// paymentKey → 결제 객체
+    pub payments: Arc<Mutex<HashMap<String, serde_json::Value>>>,
+    /// 승인 요청 횟수
+    pub confirm_count: Arc<Mutex<u32>>,
+    /// Some((HTTP 상태, 오류 코드)) 이면 승인 요청을 거절한다
+    pub reject: Arc<Mutex<Option<(u16, String)>>>,
+    /// Some 이면 요청과 다른 금액으로 승인했다고 응답한다
+    pub approved_amount: Arc<Mutex<Option<i64>>>,
+}
+
+/// `SECRET_KEY` + ":" 의 Base64
+const TOSS_AUTH: &str = "Basic dGVzdF9za19mYWtlOg==";
+
+fn toss_error(status: StatusCode, code: &str, message: &str) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    (status, axum::Json(serde_json::json!({ "code": code, "message": message }))).into_response()
+}
+
+impl FakeToss {
+    async fn start() -> Self {
+        use axum::response::IntoResponse;
+        let mut fake = FakeToss::default();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        fake.url = format!("http://{}", listener.local_addr().unwrap());
+
+        let confirm_state = fake.clone();
+        let find_state = fake.clone();
+        let app = Router::new()
+            .route(
+                "/v1/payments/confirm",
+                routing::post(move |headers: header::HeaderMap, axum::Json(req): axum::Json<serde_json::Value>| {
+                    let fake = confirm_state.clone();
+                    async move {
+                        if headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()) != Some(TOSS_AUTH) {
+                            return toss_error(StatusCode::UNAUTHORIZED, "UNAUTHORIZED_KEY", "인증되지 않은 시크릿 키입니다.");
+                        }
+                        *fake.confirm_count.lock().unwrap() += 1;
+                        if let Some((status, code)) = fake.reject.lock().unwrap().clone() {
+                            return toss_error(StatusCode::from_u16(status).unwrap(), &code, "결제 승인이 거절되었습니다.");
+                        }
+                        let amount = fake.approved_amount.lock().unwrap().unwrap_or(req["amount"].as_i64().unwrap());
+                        let payment = serde_json::json!({
+                            "paymentKey": req["paymentKey"],
+                            "orderId": req["orderId"],
+                            "status": "DONE",
+                            "totalAmount": amount,
+                            "approvedAt": "2026-11-21T12:00:00+09:00",
+                        });
+                        fake.payments.lock().unwrap().insert(req["paymentKey"].as_str().unwrap().to_string(), payment.clone());
+                        axum::Json(payment).into_response()
+                    }
+                }),
+            )
+            .route(
+                "/v1/payments/{payment_key}",
+                routing::get(move |headers: header::HeaderMap, axum::extract::Path(key): axum::extract::Path<String>| {
+                    let fake = find_state.clone();
+                    async move {
+                        if headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()) != Some(TOSS_AUTH) {
+                            return toss_error(StatusCode::UNAUTHORIZED, "UNAUTHORIZED_KEY", "인증되지 않은 시크릿 키입니다.");
+                        }
+                        match fake.payments.lock().unwrap().get(&key) {
+                            Some(payment) => axum::Json(payment.clone()).into_response(),
+                            None => toss_error(StatusCode::NOT_FOUND, "NOT_FOUND_PAYMENT", "존재하지 않는 결제 정보 입니다."),
+                        }
+                    }
+                }),
+            );
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        fake
+    }
+
+    pub fn gateway(&self) -> PaymentGateway {
+        PaymentGateway::new(&self.url, SECRET_KEY, CLIENT_KEY)
+    }
+
+    pub fn confirms(&self) -> u32 {
+        *self.confirm_count.lock().unwrap()
+    }
+}

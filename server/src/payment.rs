@@ -1,15 +1,85 @@
-//! 결제 서비스(토스페이먼츠) 설정.
+//! 결제 서비스(토스페이먼츠) 클라이언트.
 //!
-//! 브라우저는 클라이언트 키로 결제창만 띄운다.
+//! 브라우저는 클라이언트 키로 결제창만 띄운다. 승인은 이 서버가 시크릿 키로 요청하고 결과를 확인한다.
 
 #[derive(Clone)]
 pub struct PaymentGateway {
+    http: reqwest::Client,
+    api_url: String,
+    secret_key: String,
     /// 결제창을 띄울 때 브라우저가 쓰는 공개 키
     pub client_key: String,
 }
 
 impl PaymentGateway {
-    pub fn new(client_key: &str) -> Self {
-        Self { client_key: client_key.to_string() }
+    /// `api_url`: 결제 API 주소 (https://api.tosspayments.com). 테스트 키(`test_`)면 실제 돈이 오가지 않는다.
+    pub fn new(api_url: &str, secret_key: &str, client_key: &str) -> Self {
+        Self {
+            http: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .expect("HTTP 클라이언트 생성 실패"),
+            api_url: api_url.trim_end_matches('/').to_string(),
+            secret_key: secret_key.to_string(),
+            client_key: client_key.to_string(),
+        }
+    }
+}
+
+/// 결제 서비스의 결제 객체 중 이 서버가 확인하는 필드
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Payment {
+    pub payment_key: String,
+    pub order_id: String,
+    /// READY, IN_PROGRESS, DONE, CANCELED, ABORTED, EXPIRED 등. 승인 완료는 DONE
+    pub status: String,
+    pub total_amount: i64,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum PaymentError {
+    /// 결제 서비스가 요청을 거절했다 (카드 거절, 잘못된 키 등)
+    #[error("{message} ({code})")]
+    Rejected { code: String, message: String },
+    /// 결제 서비스에 연결하지 못했거나 알 수 없는 응답
+    #[error("결제 서비스 요청 실패: {0}")]
+    Failed(String),
+}
+
+impl From<reqwest::Error> for PaymentError {
+    fn from(e: reqwest::Error) -> Self {
+        PaymentError::Failed(e.to_string())
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct TossError {
+    code: String,
+    message: String,
+}
+
+impl PaymentGateway {
+    /// 결제 승인. 결제창 인증을 마친 결제를 실제로 승인한다.
+    pub async fn confirm(&self, payment_key: &str, order_id: &str, amount: i64) -> Result<Payment, PaymentError> {
+        let req = self
+            .http
+            .post(format!("{}/v1/payments/confirm", self.api_url))
+            .json(&serde_json::json!({ "paymentKey": payment_key, "orderId": order_id, "amount": amount }));
+        self.send(req).await
+    }
+
+    /// 시크릿 키 Basic 인증(`시크릿키:` 의 Base64)으로 보내고 결제 객체를 받는다.
+    async fn send(&self, req: reqwest::RequestBuilder) -> Result<Payment, PaymentError> {
+        let res = req.basic_auth(&self.secret_key, None::<&str>).send().await?;
+        let status = res.status();
+        if status.is_success() {
+            return Ok(res.json().await?);
+        }
+        match res.json::<TossError>().await {
+            Ok(e) if status.is_client_error() => Err(PaymentError::Rejected { code: e.code, message: e.message }),
+            Ok(e) => Err(PaymentError::Failed(format!("{status} {}: {}", e.code, e.message))),
+            Err(_) => Err(PaymentError::Failed(format!("{status}"))),
+        }
     }
 }

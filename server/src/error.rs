@@ -18,7 +18,8 @@ pub enum AppError {
     Forbidden(String),
     NotFound(String),
     Conflict(String),
-    BadGateway(String),
+    /// 외부 서비스(미디어·결제 서버) 연결 실패. 사용자에게 보여 줄 문구를 담는다. 원인은 변환할 때 로그로 남긴다.
+    BadGateway(&'static str),
     Internal(String),
 }
 
@@ -30,10 +31,7 @@ impl IntoResponse for AppError {
             AppError::Forbidden(detail) => (StatusCode::FORBIDDEN, detail),
             AppError::NotFound(detail) => (StatusCode::NOT_FOUND, detail),
             AppError::Conflict(detail) => (StatusCode::CONFLICT, detail),
-            AppError::BadGateway(detail) => {
-                tracing::warn!("{detail}");
-                (StatusCode::BAD_GATEWAY, "방송 서버에 연결하지 못했습니다. 잠시 후 다시 시도해주세요.".to_string())
-            }
+            AppError::BadGateway(detail) => (StatusCode::BAD_GATEWAY, detail.to_string()),
             AppError::Internal(detail) => {
                 tracing::error!("{detail}");
                 (StatusCode::INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다.".to_string())
@@ -85,7 +83,10 @@ impl From<MediaError> for AppError {
     fn from(e: MediaError) -> Self {
         match e {
             MediaError::NotStreaming => AppError::Conflict(e.to_string()),
-            MediaError::Failed(_) => AppError::BadGateway(e.to_string()),
+            MediaError::Failed(_) => {
+                tracing::warn!("{e}");
+                AppError::BadGateway("방송 서버에 연결하지 못했습니다. 잠시 후 다시 시도해주세요.")
+            }
         }
     }
 }
@@ -129,6 +130,19 @@ where
 
 impl From<crate::donation::DonationError> for AppError {
     fn from(e: crate::donation::DonationError) -> Self {
-        AppError::BadRequest(e.to_string())
+        use crate::donation::DonationError;
+        match e {
+            DonationError::NotDonor => AppError::Forbidden(e.to_string()),
+            DonationError::AlreadyDone | DonationError::Ended | DonationError::RecipientGone => AppError::Conflict(e.to_string()),
+            DonationError::PaymentMismatch => AppError::BadGateway("결제 서비스 응답이 주문과 달라 후원을 확정하지 않았습니다."),
+            _ => AppError::BadRequest(e.to_string()),
+        }
+    }
+}
+
+impl From<crate::payment::PaymentError> for AppError {
+    fn from(e: crate::payment::PaymentError) -> Self {
+        tracing::warn!("{e}");
+        AppError::BadGateway("결제 서비스에 연결하지 못했습니다. 잠시 후 다시 시도해주세요.")
     }
 }
