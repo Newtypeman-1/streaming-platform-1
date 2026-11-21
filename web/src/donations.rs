@@ -18,19 +18,49 @@ pub fn Donations(broadcast: BroadcastResponse) -> Element {
     let mut amount = use_signal(|| 5_000i64);
     let mut busy = use_signal(|| false);
     let mut error = use_signal(|| None::<String>);
+    // 서버에 만든 주문. 있으면 금액 선택 대신 주문서(결제수단·약관)를 보여 준다
+    let mut checkout = use_signal(|| None::<DonationOrderResponse>);
 
-    let donate = move |evt: FormEvent| async move {
+    // 주문서 영역이 그려진 뒤 그 안에 결제 UI 를 그린다
+    use_effect(move || {
+        let Some(order) = checkout() else { return };
+        spawn(async move {
+            if let Some(failure) = call_payment(&format!("render({}, {})", js(&order.client_key), js(&order))).await {
+                end_checkout(&order, failure, checkout, error).await;
+            }
+        });
+    });
+
+    let start = move |evt: FormEvent| async move {
         evt.prevent_default();
         busy.set(true);
         error.set(None);
-        let result = match api::order_donation(id, amount()).await {
-            Ok(order) => open_payment(&order).await,
-            Err(e) => Err(e),
-        };
-        if let Err(e) = result {
-            error.set(Some(e));
+        match api::order_donation(id, amount()).await {
+            Ok(order) => checkout.set(Some(order)),
+            Err(e) => error.set(Some(e)),
         }
         busy.set(false);
+    };
+
+    // 결제하기: 고른 결제수단의 결제창을 연다. 인증에 성공하면 성공 화면으로 이동한다
+    let pay = move |_| async move {
+        let Some(order) = checkout() else { return };
+        busy.set(true);
+        error.set(None);
+        match document::eval(&format!("return await window.payment.request({});", js(&order))).await {
+            Ok(serde_json::Value::Null) => {}
+            Ok(v) if v["notice"].is_string() => error.set(v["notice"].as_str().map(str::to_string)),
+            other => end_checkout(&order, failure_of(other), checkout, error).await,
+        }
+        busy.set(false);
+    };
+
+    // 다른 금액을 고르려고 주문서를 닫으면 이 주문은 취소로 기록한다
+    let close = move |_| async move {
+        let Some(order) = checkout() else { return };
+        let failure = FailDonationRequest { code: "USER_CANCEL".into(), message: Some("주문서를 닫았습니다.".into()) };
+        end_checkout(&order, failure, checkout, error).await;
+        error.set(None);
     };
 
     let Some(owner) = broadcast.owner.clone() else {
@@ -58,9 +88,24 @@ pub fn Donations(broadcast: BroadcastResponse) -> Element {
                 Some(Err(e)) => rsx! { p { class: "error", "{e}" } },
                 None => rsx! { h2 { "후원" } },
             }
-            match session() {
-                Session::User(user) if user.id != owner.id => rsx! {
-                    form { class: "donation-form", onsubmit: donate,
+            match (session(), checkout()) {
+                (Session::User(_), Some(order)) => rsx! {
+                    div { class: "donation-checkout",
+                        p { "{order.recipient.username} 님에게 " strong { {api::won(order.amount)} } " 후원" }
+                        div { id: "payment-method" }
+                        div { id: "agreement" }
+                        div { class: "row",
+                            button { class: "button", disabled: busy(), onclick: pay, "결제하기" }
+                            button { class: "button secondary", disabled: busy(), onclick: close, "다른 금액 선택" }
+                        }
+                        p { class: "meta", "테스트 결제라 실제 돈이 빠져나가지 않습니다." }
+                        if let Some(e) = error() {
+                            p { class: "error", "{e}" }
+                        }
+                    }
+                },
+                (Session::User(user), None) if user.id != owner.id => rsx! {
+                    form { class: "donation-form", onsubmit: start,
                         div { class: "row",
                             for preset in PRESETS {
                                 button {
@@ -89,7 +134,7 @@ pub fn Donations(broadcast: BroadcastResponse) -> Element {
                         }
                     }
                 },
-                Session::Guest => rsx! {
+                (Session::Guest, _) => rsx! {
                     p { class: "meta",
                         Link { to: Route::Login {}, class: "link", "로그인" }
                         "하면 후원할 수 있습니다."
@@ -101,24 +146,41 @@ pub fn Donations(broadcast: BroadcastResponse) -> Element {
     }
 }
 
-/// 결제창을 띄운다. 인증에 성공하면 결제창이 성공 화면으로 이동하므로 돌아오지 않는다.
-/// 결제창을 닫거나 실패하면 서버에 기록하고 그 사유를 돌려준다.
-async fn open_payment(order: &DonationOrderResponse) -> Result<(), String> {
-    let code = format!(
-        "return await window.payment.request({}, {});",
-        serde_json::to_string(&order.client_key).unwrap(),
-        serde_json::to_string(order).unwrap()
-    );
-    let failure = match document::eval(&code).await {
-        Ok(serde_json::Value::Null) => return Ok(()),
+fn js<T: serde::Serialize>(value: &T) -> String {
+    serde_json::to_string(value).unwrap()
+}
+
+/// `window.payment` 의 함수를 부른다. 실패하면 그 코드·메시지
+async fn call_payment(call: &str) -> Option<FailDonationRequest> {
+    match document::eval(&format!("return await window.payment.{call};")).await {
+        Ok(serde_json::Value::Null) => None,
+        other => Some(failure_of(other)),
+    }
+}
+
+fn failure_of(result: Result<serde_json::Value, document::EvalError>) -> FailDonationRequest {
+    match result {
         Ok(v) => FailDonationRequest {
             code: v["code"].as_str().unwrap_or("UNKNOWN").to_string(),
             message: v["message"].as_str().map(str::to_string),
         },
         Err(e) => FailDonationRequest { code: "UNKNOWN".into(), message: Some(format!("{e:?}")) },
-    };
-    let recorded = api::fail_donation(&order.order_id, &failure).await?;
-    Err(failure_text(&recorded))
+    }
+}
+
+/// 주문서를 닫는다. 서버에 취소·실패를 기록하고 그 사유를 보여 준다.
+async fn end_checkout(
+    order: &DonationOrderResponse,
+    failure: FailDonationRequest,
+    mut checkout: Signal<Option<DonationOrderResponse>>,
+    mut error: Signal<Option<String>>,
+) {
+    document::eval("window.payment.clear()");
+    checkout.set(None);
+    error.set(Some(match api::fail_donation(&order.order_id, &failure).await {
+        Ok(recorded) => failure_text(&recorded),
+        Err(e) => e,
+    }));
 }
 
 fn failure_text(order: &DonationOrderResponse) -> String {
