@@ -10,7 +10,80 @@ impl MigratorTrait for Migrator {
         vec![
             Box::new(m20261119_000001_create_broadcast::Migration),
             Box::new(m20261120_000001_add_live::Migration),
+            Box::new(m20261121_000001_add_users::Migration),
         ]
+    }
+}
+
+/// 3단계: 회원과 로그인 세션.
+mod m20261121_000001_add_users {
+    use super::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261121_000001_add_users"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .create_table(
+                    Table::create()
+                        .table(Users::Table)
+                        .col(big_pk_auto(Users::Id))
+                        .col(string_len_uniq(Users::Username, crate::auth::USERNAME_MAX_CHARS as u32))
+                        .col(string(Users::PasswordHash))
+                        .col(timestamp_with_time_zone(Users::CreatedAt))
+                        .to_owned(),
+                )
+                .await?;
+            manager
+                .create_table(
+                    Table::create()
+                        .table(Session::Table)
+                        .col(big_pk_auto(Session::Id))
+                        .col(big_integer(Session::UserId))
+                        .col(string_uniq(Session::TokenHash))
+                        .col(timestamp_with_time_zone(Session::ExpiresAt))
+                        .col(timestamp_with_time_zone(Session::CreatedAt))
+                        .foreign_key(
+                            ForeignKey::create()
+                                .from(Session::Table, Session::UserId)
+                                .to(Users::Table, Users::Id)
+                                .on_delete(ForeignKeyAction::Cascade),
+                        )
+                        .to_owned(),
+                )
+                .await
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.drop_table(Table::drop().table(Session::Table).to_owned()).await?;
+            manager.drop_table(Table::drop().table(Users::Table).to_owned()).await
+        }
+    }
+
+    #[derive(DeriveIden)]
+    enum Users {
+        Table,
+        Id,
+        Username,
+        PasswordHash,
+        CreatedAt,
+    }
+
+    #[derive(DeriveIden)]
+    enum Session {
+        Table,
+        Id,
+        UserId,
+        TokenHash,
+        ExpiresAt,
+        CreatedAt,
     }
 }
 

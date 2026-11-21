@@ -4,6 +4,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use shared::ErrorResponse;
 
+use crate::auth::AuthError;
 use crate::broadcast::BroadcastError;
 use crate::live::LiveError;
 use crate::media::MediaError;
@@ -35,6 +36,16 @@ impl IntoResponse for AppError {
             }
         };
         (status, Json(ErrorResponse { status: status.as_u16(), detail })).into_response()
+    }
+}
+
+impl From<AuthError> for AppError {
+    fn from(e: AuthError) -> Self {
+        match e {
+            AuthError::InvalidUsername | AuthError::InvalidPassword => AppError::BadRequest(e.to_string()),
+            AuthError::UsernameTaken => AppError::Conflict(e.to_string()),
+            AuthError::WrongCredentials | AuthError::LoginRequired => AppError::Unauthorized(e.to_string()),
+        }
     }
 }
 

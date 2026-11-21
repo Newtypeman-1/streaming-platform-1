@@ -27,6 +27,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/broadcasts/{id}", get(detail))
         .route("/api/broadcasts/{id}/video", get(video))
         .merge(crate::live_api::routes())
+        .merge(crate::auth_api::routes())
         .with_state(state)
 }
 

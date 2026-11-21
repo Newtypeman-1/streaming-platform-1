@@ -56,6 +56,39 @@ pub fn get(uri: &str) -> Request<Body> {
     Request::get(uri).body(Body::empty()).unwrap()
 }
 
+pub fn json(method: &str, uri: &str, value: serde_json::Value) -> Request<Body> {
+    Request::builder()
+        .method(method)
+        .uri(uri)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(value.to_string()))
+        .unwrap()
+}
+
+/// 로그인 쿠키(`nadri_session=...`)를 실어 보낸다
+pub fn with_cookie(mut req: Request<Body>, cookie: &str) -> Request<Body> {
+    req.headers_mut().insert(header::COOKIE, cookie.parse().unwrap());
+    req
+}
+
+/// 응답의 Set-Cookie 에서 요청에 실어 보낼 `이름=값` 부분만 꺼낸다
+pub fn session_cookie(headers: &header::HeaderMap) -> Option<String> {
+    let set_cookie = headers.get(header::SET_COOKIE)?.to_str().ok()?;
+    Some(set_cookie.split(';').next()?.to_string())
+}
+
+pub const PASSWORD: &str = "password123";
+
+impl TestApp {
+    /// 가입하고 로그인 쿠키를 돌려준다
+    pub async fn signup(&self, username: &str) -> String {
+        let (status, headers, _) =
+            self.send(json("POST", "/api/auth/signup", serde_json::json!({ "username": username, "password": PASSWORD }))).await;
+        assert_eq!(status, StatusCode::CREATED);
+        session_cookie(&headers).unwrap()
+    }
+}
+
 /// MediaMTX 흉내. WHIP/WHEP 요청은 받은 offer 를 기록하고 "answer:<offer>" 를 돌려준다.
 /// `ready` 에 넣어 둔 경로만 송출 중인 것으로 보고, 그 경로만 시청할 수 있다.
 #[derive(Clone, Default)]

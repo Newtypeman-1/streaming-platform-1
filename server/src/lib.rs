@@ -1,4 +1,6 @@
 pub mod api;
+pub mod auth;
+pub mod auth_api;
 pub mod broadcast;
 pub mod entity;
 pub mod error;

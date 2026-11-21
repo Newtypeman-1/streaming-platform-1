@@ -54,6 +54,20 @@ pub struct StartLiveResponse {
     pub stream_key: String,
 }
 
+/// 회원가입·로그인 요청.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Credentials {
+    pub username: String,
+    pub password: String,
+}
+
+/// 로그인한 사용자, 방송 소유자, 댓글 작성자.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UserResponse {
+    pub id: i64,
+    pub username: String,
+}
+
 /// 오류 응답. RFC 9457 Problem Details 의 필드 이름을 따른다.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ErrorResponse {
