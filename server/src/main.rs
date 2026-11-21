@@ -67,7 +67,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await?;
     tracing::info!("listening on http://localhost:{port} (instance: {instance}, videos: {storage_dir}, media: {media_url})");
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app).with_graceful_shutdown(shutdown_signal()).await?;
     Ok(())
 }
 
+/// 스케일 인 때 오케스트레이터가 보내는 SIGTERM(또는 Ctrl+C)을 받으면 새 연결은 받지 않고,
+/// 처리 중인 요청은 끝까지 응답한 뒤 종료한다.
+async fn shutdown_signal() {
+    let ctrl_c = async { tokio::signal::ctrl_c().await.ok() };
+    #[cfg(unix)]
+    let term = async {
+        if let Ok(mut s) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            s.recv().await;
+        }
+    };
+    #[cfg(not(unix))]
+    let term = std::future::pending::<()>();
+    tokio::select! {
+        _ = ctrl_c => {}
+        _ = term => {}
+    }
+    tracing::info!("종료 신호를 받아 처리 중인 요청을 마치고 종료합니다");
+}
