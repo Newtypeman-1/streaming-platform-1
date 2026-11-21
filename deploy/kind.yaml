@@ -1,0 +1,19 @@
+# kind 클러스터 설정. deploy/up.sh 가 __VIDEOS__ 를 저장소의 storage/videos 절대 경로로 바꿔 쓴다.
+# 노드가 여럿이어도 모두 같은 디렉터리를 보므로, 어느 인스턴스가 받은 업로드든 다른 인스턴스가 재생할 수 있다.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      # Service(NodePort 30800) → 이 컴퓨터의 8000. 웹 개발 서버(dx serve)의 /api 프록시가 그대로 쓴다.
+      - containerPort: 30800
+        hostPort: 8000
+        listenAddress: 127.0.0.1
+    extraMounts:
+      - { hostPath: __VIDEOS__, containerPath: /nadri/videos }
+  - role: worker
+    extraMounts:
+      - { hostPath: __VIDEOS__, containerPath: /nadri/videos }
+  - role: worker
+    extraMounts:
+      - { hostPath: __VIDEOS__, containerPath: /nadri/videos }

@@ -1,0 +1,106 @@
+# API 서버를 여러 인스턴스(Pod)로 띄우고, 하나의 주소(Service)로 요청을 나눠 받고,
+# CPU 사용률에 따라 인스턴스 수를 2~8개 사이에서 자동으로 조절(HPA)한다.
+# 상태는 모두 인스턴스 밖에 둔다: 로그인 세션·방송·라이브 상태·댓글·후원은 PostgreSQL,
+# 업로드 영상은 모든 노드가 함께 보는 공유 디렉터리(/data/videos).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nadri-server
+  labels: { app: nadri-server }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: nadri-server }
+  template:
+    metadata:
+      labels: { app: nadri-server }
+    spec:
+      # 인스턴스를 여러 노드에 고르게 나눈다(노드가 모자라면 같은 노드에도 띄운다)
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: { app: nadri-server }
+      # 스케일 인 때 처리 중인 요청을 마칠 시간
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: server
+          image: nadri-server:local
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+          # DATABASE_URL, MEDIAMTX_URL, MEDIAMTX_API_URL, TOSS_* (deploy/up.sh 가 .env 로 만든다)
+          envFrom:
+            - secretRef: { name: nadri-env }
+          env:
+            - name: RUST_LOG
+              value: info,sqlx=warn,tower_http=warn
+          # HPA 의 CPU 사용률은 requests 대비 비율이다
+          resources:
+            requests: { cpu: 100m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          readinessProbe:
+            httpGet: { path: /api/health, port: 8000 }
+            periodSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet: { path: /api/health, port: 8000 }
+            periodSeconds: 10
+            failureThreshold: 6
+          lifecycle:
+            # Service 가 이 Pod 을 목록에서 빼기 전에 들어오는 요청을 받아 주도록 잠시 기다린 뒤 종료한다
+            preStop:
+              sleep: { seconds: 5 }
+          volumeMounts:
+            - name: videos
+              mountPath: /data/videos
+      volumes:
+        - name: videos
+          hostPath:
+            # deploy/kind.yaml 이 모든 노드의 이 경로에 저장소의 storage/videos 를 연결한다
+            path: /nadri/videos
+            type: DirectoryOrCreate
+---
+# 여러 인스턴스 앞의 단일 진입점. 준비된(readiness 통과) Pod 으로만 요청을 나눠 보낸다.
+# kind 가 노드의 30800 포트를 이 컴퓨터의 8000 포트로 열어 준다.
+apiVersion: v1
+kind: Service
+metadata:
+  name: nadri-server
+spec:
+  type: NodePort
+  selector: { app: nadri-server }
+  ports:
+    - port: 8000
+      targetPort: 8000
+      nodePort: 30800
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: nadri-server
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: nadri-server
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - { type: Percent, value: 100, periodSeconds: 15 }
+    # 기본값(5분)보다 짧게: 부하가 1분 동안 계속 낮으면 줄인다
+    scaleDown:
+      stabilizationWindowSeconds: 60
+      policies:
+        - { type: Pods, value: 2, periodSeconds: 30 }

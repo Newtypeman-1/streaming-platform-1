@@ -239,3 +239,14 @@
 - 작업: 저장소 루트 `Dockerfile` 추가. Rust 이미지에서 서버만 릴리스 빌드하고(레지스트리·빌드 결과 캐시), `debian:bookworm-slim`에 실행 파일과 인증서만 담아 일반 사용자(`nadri`)로 실행. 기본값 `SERVER_PORT=8000`, `VIDEO_STORAGE_DIR=/data/videos`
 - 이유: 서버를 여러 인스턴스로 띄우려면 어느 노드에서든 같은 실행 환경으로 뜨는 이미지가 필요함. 빌드 도구는 실행 이미지에 넣지 않음
 - 결과: `docker build -t nadri-server:local .` 성공(이미지 38.7MB). 컨테이너로 실행해 로컬 PostgreSQL에 접속 → `/api/health` `200`·`X-Instance` 헤더(컨테이너 이름)·방송 목록 응답 확인, `docker stop` 시 "처리 중인 요청을 마치고 종료" 로그 후 정상 종료
+
+
+### 005-06 feat: 로컬 Kubernetes 클러스터에서 여러 인스턴스와 자동 스케일링
+- [링크](https://github.com/Newtypeman-1/streaming-platform-1/commit/005-06)
+- 작업: `deploy/` 추가
+  - `kind.yaml`: 노드 3개(컨트롤 플레인 1 + 워커 2) kind 클러스터. 모든 노드에 저장소의 `storage/videos`를 연결하고, Service 포트(30800)를 이 컴퓨터의 `127.0.0.1:8000`으로 염
+  - `k8s/server.yaml`: 서버 Deployment(기본 2개, 노드에 고르게 분산, 상태 확인 API로 readiness·liveness, 종료 전 5초 대기), NodePort Service, HPA(CPU 사용률 50% 기준, 2~8개, 늘릴 때 즉시·줄일 때 1분 안정화)
+  - `up.sh`: 클러스터 생성 → metrics-server 설치 → 이미지 빌드·노드에 적재 → `.env`로 접속 정보 Secret 생성(클러스터 안에서는 `localhost` 대신 `host.docker.internal`) → 배포. `down.sh`: 클러스터 삭제
+  - `watch.sh`: 시각·CPU 사용률·원하는/준비된 인스턴스 수·Pod 상태를 주기적으로 출력
+- 이유: 부하에 따라 인스턴스 수가 자동으로 늘고 줄게 하기 위함. 상태는 인스턴스 밖에 둠: 로그인 세션·방송·라이브 상태·댓글·후원은 docker compose의 PostgreSQL, 업로드 영상은 모든 노드가 함께 보는 디렉터리, 라이브 중계는 docker compose의 MediaMTX. 서버 포트를 그대로 8000으로 열어 웹 개발 서버의 `/api` 프록시를 바꾸지 않아도 됨
+- 결과: `deploy/up.sh`로 클러스터 생성·배포 확인. `localhost:8000`으로 보낸 요청 10건이 두 인스턴스에 5:5로 나뉨, HPA가 CPU 사용률을 읽음. 클러스터에서 회원가입·영상 업로드·댓글 작성 → 다른 인스턴스에서 로그인 확인·영상 재생(`206`)·댓글 조회. 송출 없이 시작한 라이브가 31초 뒤 `ended`로 바뀌어 클러스터에서도 MediaMTX 확인이 동작함
