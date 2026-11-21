@@ -9,6 +9,7 @@
 | DB | PostgreSQL 17 (Docker Compose) |
 | 프론트엔드 | Dioxus 0.7 (웹, WASM) |
 | 라이브 | 브라우저 WebRTC (WHIP 송출 / WHEP 시청), MediaMTX 1.21 |
+| 결제 | 토스페이먼츠 결제창 SDK v2·결제 API (테스트 키) |
 | 테스트 | cargo test, Testcontainers(PostgreSQL) |
 
 ```
@@ -182,6 +183,80 @@
 { "id": 1, "broadcastId": 3, "author": { "id": 2, "username": "viewer" }, "body": "재밌어요", "createdAt": "2026-11-21T05:10:00+00:00", "updatedAt": null }
 ```
 
+## 4단계: 방송자 후원(도네이션)
+
+### 구현 범위
+
+- **후원 주문**
+  - 로그인한 사용자가 방송 상세 화면에서 금액을 골라 그 방송의 방송자(소유자)에게 후원합니다. 금액은 1,000원 ~ 1,000,000원입니다.
+  - 받는 사람은 화면이 아니라 서버가 방송 소유자로 정합니다. 소유자가 없는 옛 방송과 자기 방송에는 후원할 수 없습니다(`400`).
+  - 서버는 주문번호를 만들어 금액·받는 사람과 함께 **결제 대기**(`pending`)로 저장한 뒤 결제창을 띄울 값을 돌려줍니다.
+- **결제(테스트 모드)**
+  - 토스페이먼츠 결제창(SDK v2, 카드)을 씁니다. 테스트 키(`test_`)를 쓰므로 실제 돈은 빠져나가지 않습니다.
+- **서버의 결제 승인 확인**
+  - 결제창 인증이 끝나면 화면이 결제창이 넘겨 준 `paymentKey`·`orderId`·`amount`를 서버에 보냅니다. 화면은 아직 "완료"를 보여 주지 않습니다.
+  - 서버는 ① 후원한 본인인지 ② 금액이 주문과 같은지 ③ 주문한 방송이 남아 있고 소유자가 주문 때 받는 사람과 같은지 확인한 뒤, 시크릿 키로 결제 서비스에 **승인을 요청**합니다.
+  - 승인 응답의 주문번호·금액·상태(`DONE`)가 주문과 같을 때만 후원을 **확정**(`done`)합니다. 화면은 이 응답을 받은 뒤에만 "후원 완료"를 보여 줍니다.
+  - 결제 서비스가 거절하면 사유와 함께 `400`, 실패(`failed`)로 기록합니다. 결제 서비스에 연결하지 못하면 승인됐는지 알 수 없으므로 `502`를 주고 결제 대기로 둡니다(아래 승인 통지로 확정될 수 있음).
+  - 결제창을 닫으면 **취소**(`canceled`), 결제창에서 실패하면 **실패**(`failed`)로 기록합니다.
+- **승인 통지(웹훅)와 중복 적립 방지**
+  - 결제 서비스가 보내는 결제 상태 변경 통지(`PAYMENT_STATUS_CHANGED`)를 받습니다. 승인 후 화면이 닫히거나 승인 응답이 끊겨도 통지로 확정됩니다.
+  - 통지에는 서명이 없어 누구나 보낼 수 있으므로, 내용은 믿지 않고 `paymentKey`로 결제 서비스에 **직접 조회**한 결과(`DONE`·주문번호·금액)로 확정합니다.
+  - 후원은 주문 하나가 DB 한 행이고, 확정은 "결제 대기인 주문만 `done`으로 바꾸는" 조건부 갱신입니다. 같은 통지가 여러 번 오거나 승인 확인과 통지가 함께 와도 한 번만 확정되고, 합계는 확정된 행의 금액을 더하므로 두 번 적립되지 않습니다. 결제 키(`paymentKey`)는 DB에서 유일해 한 결제가 두 주문에 쓰일 수도 없습니다.
+  - 결제 서비스는 `200`을 받을 때까지 통지를 다시 보내므로, 이미 처리했거나 이 서버의 주문이 아닌 통지에도 `200`을 줍니다.
+- **방송별 후원 내역과 합계**
+  - 확정된 후원만 최근 순으로 후원자·금액·시각과 합계·건수를 보여 줍니다. 결제 대기·실패·취소는 세지 않습니다. 누구나 볼 수 있습니다.
+  - 방송을 지워도 후원 기록은 남습니다(방송 연결만 끊김).
+- **웹 화면**
+  - 방송 상세 화면에 후원 합계·내역과 금액 선택(1,000 / 5,000 / 10,000 / 50,000원 또는 직접 입력), **후원하기** 버튼이 있습니다. 비로그인이면 로그인 안내, 방송 소유자에게는 후원 버튼이 보이지 않습니다.
+  - 결제창이 돌아오는 `/donations/success`(승인 확인 후 "후원 완료"), `/donations/fail`(취소·실패 표시) 화면이 있습니다.
+
+**이번 단계에서 하지 않는 것:** 결제 취소·환불, 방송자 정산·출금, 후원 메시지와 방송 화면 알림, 카드 외 결제수단, 실시간 후원 갱신, 결제 서비스 장애로 결제 대기에 남은 주문의 주기적 재확인
+
+### 결제 흐름
+
+```
+브라우저                         API 서버                          토스페이먼츠
+ │ POST /api/broadcasts/{id}/donations ─▶ 주문 저장(pending)
+ │ ◀── orderId·amount·clientKey
+ │ 결제창(clientKey, orderId, amount) ───────────────────────────▶ 카드 인증
+ │ ◀──────────────────────── successUrl?paymentKey&orderId&amount
+ │ POST /api/donations/confirm ─────────▶ 본인·금액·받는 방송 확인
+ │                                        승인 요청(시크릿 키) ──▶ /v1/payments/confirm
+ │                                        응답 대조(주문번호·금액·DONE) → done
+ │ ◀── 확정된 주문 → "후원 완료"
+ │                                        ◀── 결제 상태 통지(웹훅) ── 
+ │                                        조회(시크릿 키) ────────▶ /v1/payments/{paymentKey}
+ │                                        결제 대기면 done, 이미 done 이면 그대로
+```
+
+### 공개 범위
+
+| 기능 | 비로그인 | 로그인 (다른 사용자) | 로그인 (후원한 본인) |
+| --- | --- | --- | --- |
+| 방송별 후원 내역·합계 조회 | O | O | O |
+| 후원 주문 | X `401` | O (자기 방송은 `400`) | O |
+| 결제 승인 확인, 실패·취소 기록 | X `401` | X `403` | O |
+| 결제 상태 통지(웹훅) | 누구나 보낼 수 있지만 서버가 결제 서비스에 조회해 확인 | | |
+
+### API (추가)
+
+| Method | Path | 로그인 | 설명 |
+| --- | --- | --- | --- |
+| `GET` | `/api/broadcasts/{id}/donations` | - | 후원 내역·합계 `{ "total", "count", "donations": [{ "id", "donor", "amount", "approvedAt" }] }`. 확정된 후원만, 최근 순 |
+| `POST` | `/api/broadcasts/{id}/donations` | 필요 | 후원 주문 (`{"amount": 5000}`) → `201` 주문. 금액 범위 밖·소유자 없는 방송·자기 방송 `400` |
+| `POST` | `/api/donations/confirm` | 후원한 본인 | 결제 승인 확인 (`{"paymentKey", "orderId", "amount"}`) → `200` 확정된 주문. 금액 불일치·결제 서비스 거절 `400`, 끝난 주문·방송 없어짐 `409`, 결제 서비스 연결 실패 `502`. 이미 확정된 주문은 승인을 다시 요청하지 않고 같은 결과 |
+| `POST` | `/api/donations/{orderId}/fail` | 후원한 본인 | 결제창 실패·취소 기록 (`{"code", "message"}`) → `200`. `PAY_PROCESS_CANCELED`는 취소, 나머지는 실패. 확정된 주문은 `409` |
+| `POST` | `/api/payments/webhook` | - | 결제 서비스의 결제 상태 변경 통지. 조회 결과로 확정 → `200`. 결제 서비스에 없는 결제 `400` |
+
+주문 응답 예시:
+
+```json
+{ "orderId": "nadri-670d220b34f84a7d9f64804b68d14386", "broadcastId": 12, "recipient": { "id": 4, "username": "owner4" }, "amount": 5000, "orderName": "나드리 owner4 님 후원", "status": "pending", "clientKey": "test_ck_...", "failure": null }
+```
+
+`status`는 `pending`(결제 대기) · `done`(확정) · `failed`(실패) · `canceled`(취소)입니다.
+
 ## 실행 방법
 
 ### 준비물
@@ -219,8 +294,14 @@ cp .env.example .env
 | `PUBLIC_HOST` | 휴대폰이 접속할 이 컴퓨터의 LAN IP. MediaMTX 영상 주소와 HTTPS 프록시가 씁니다 | `192.168.0.10` |
 | `MEDIAMTX_URL` | API 서버가 접속할 MediaMTX WebRTC 주소 | `http://localhost:8889` |
 | `MEDIAMTX_API_URL` | API 서버가 접속할 MediaMTX Control API 주소 | `http://localhost:9997` |
+| `TOSS_CLIENT_KEY` | 토스페이먼츠 API 개별 연동 **테스트 클라이언트 키** (브라우저에 공개되는 값) | `test_ck_...` |
+| `TOSS_SECRET_KEY` | 토스페이먼츠 API 개별 연동 **테스트 시크릿 키** (서버만 사용, 외부 노출 금지) | `test_sk_...` |
+| `TOSS_API_URL` | 결제 API 주소 | `https://api.tosspayments.com` |
+| `TOSS_TEST_CODE` | (선택) 결제 승인 실패 재현용 오류 코드. 평소엔 비워 둡니다 | `INVALID_REJECT_CARD` |
 
 서버는 실행 위치부터 상위 폴더로 올라가며 `.env`를 찾아 읽습니다. 그래서 따로 `export`하지 않아도 됩니다.
+
+**토스페이먼츠 테스트 키 발급**: [토스페이먼츠 개발자센터](https://developers.tosspayments.com)에 가입하고 **API 키** 메뉴에서 **API 개별 연동 키**의 테스트 클라이언트 키(`test_ck_`)와 시크릿 키(`test_sk_`)를 `.env`에 넣습니다. 결제위젯 연동 키(`test_gck_`·`test_gsk_`)는 이 프로젝트의 결제창에서 쓰지 않습니다. 테스트 키로는 실제 결제가 일어나지 않습니다. 키 값은 저장소에 올리지 마세요. 키가 없어도 서버는 뜨지만 후원 결제는 할 수 없습니다.
 
 LAN IP는 macOS에서 아래 명령으로 확인합니다. 와이파이를 바꾸면 IP도 바뀝니다. 그때는 `.env`를 고치고 `docker compose up -d`를 다시 실행합니다.
 
@@ -266,7 +347,7 @@ cd web && dx serve --port 3300
 cargo test -p server
 ```
 
-Testcontainers가 PostgreSQL 컨테이너를 띄우므로 Docker가 실행 중이어야 합니다. 라이브 테스트(`server/tests/live.rs`)는 가짜 MediaMTX를 띄우므로 MediaMTX 컨테이너는 필요 없습니다.
+Testcontainers가 PostgreSQL 컨테이너를 띄우므로 Docker가 실행 중이어야 합니다. 라이브 테스트(`server/tests/live.rs`)는 가짜 MediaMTX를, 후원 테스트(`server/tests/donations.rs`)는 가짜 결제 API를 띄우므로 MediaMTX 컨테이너나 토스페이먼츠 키는 필요 없습니다.
 
 ## 1단계 직접 확인 절차 (녹화 방송)
 
@@ -491,3 +572,66 @@ code -b owner.txt $API/api/auth/me
 - 로그인 쿠키에는 `Secure` 속성을 붙이지 않았습니다. 개발 환경의 `http://localhost`에서도 쓰기 위해서입니다. 실서비스 배포(HTTPS) 단계에서 붙입니다.
 - 로그인 쿠키는 `SameSite=Lax`라 다른 사이트에서 보낸 POST·PATCH·DELETE에는 실리지 않습니다(CSRF 방지).
 
+## 4단계 직접 확인 절차 (후원·테스트 결제)
+
+> 4단계에서는 토스페이먼츠 테스트 키(`TOSS_CLIENT_KEY`, `TOSS_SECRET_KEY`)가 필요합니다. 위 "토스페이먼츠 테스트 키 발급"대로 `.env`에 넣고 API 서버를 다시 실행합니다. 서버가 뜰 때 `donation` 테이블이 마이그레이션으로 추가됩니다.
+
+후원 상태는 DB에서 직접 확인할 수 있습니다. 아래 명령을 "상태 확인"이라고 부릅니다.
+
+```bash
+docker exec streaming-platform-postgres psql -U streaming -d streaming \
+  -c "select id, order_id, amount, status, payment_key, failure, approved_at from donation order by id desc limit 5"
+```
+
+**준비**: 일반 창에서 `owner1`(방송자)로 로그인해 녹화 방송을 등록하거나 라이브를 시작했다가 종료합니다. 시크릿 창에서 `viewer1`(후원자)로 로그인해 그 방송 상세로 갑니다.
+
+### A. 테스트 결제 성공
+
+1. `viewer1` 창의 방송 상세에서 **5,000원**을 고르고 **owner1 님에게 후원하기**를 누릅니다.
+2. 결제창이 뜹니다. 카드사를 고르고 안내대로 진행합니다. 테스트 결제라 실제 돈은 빠져나가지 않습니다.
+3. "결제 승인을 확인하는 중..." 뒤에 **후원 완료** — "owner1 님에게 5,000원을 후원했습니다."가 나옵니다. 서버가 결제 서비스 승인까지 확인한 뒤에만 이 화면이 나옵니다.
+4. **방송으로 돌아가기**를 누르면 "후원 5,000원 · 1건"과 내역에 `viewer1 5,000원`이 보입니다. `owner1` 창과 비로그인 창에서도 같은 합계가 보입니다. `owner1` 창에는 후원 버튼이 없습니다.
+5. 상태 확인: 그 주문이 `done`이고 `payment_key`, `approved_at`이 있습니다. 토스페이먼츠 개발자센터의 테스트 결제 내역에도 같은 주문번호가 있습니다.
+6. 성공 화면 주소를 새로고침해도 "후원 완료"가 다시 나오고 합계는 그대로 5,000원입니다(승인을 다시 요청하지 않음).
+
+### B. 테스트 결제 취소
+
+1. **후원하기**를 누르고 결제창을 닫습니다(X 또는 취소).
+2. "결제를 취소했습니다."가 나오고(환경에 따라 취소 화면으로 이동) 합계는 그대로입니다.
+3. 상태 확인: 그 주문이 `canceled`입니다.
+
+### C. 테스트 결제 실패
+
+1. **결제 서비스가 승인을 거절하는 경우**: `.env`에 `TOSS_TEST_CODE=INVALID_REJECT_CARD`를 넣고 API 서버를 다시 실행합니다. 서버 로그에 "결제 승인 요청에 테스트 코드 ... 를 붙입니다"가 나옵니다.
+   - 후원하고 결제창을 끝까지 진행하면 **후원을 확정하지 못했습니다** — "결제가 승인되지 않았습니다: ..."가 나옵니다. 합계는 그대로이고, 상태 확인에서 `failed`와 거절 사유가 보입니다.
+   - 확인이 끝나면 `TOSS_TEST_CODE=`로 비우고 서버를 다시 실행합니다.
+2. **화면의 성공 표시만 흉내 내는 경우**: 결제창을 거치지 않고 성공 화면 주소를 직접 엽니다. 서버가 결제 서비스에 승인을 요청하고 결제 서비스가 거절하므로 확정되지 않습니다.
+   ```bash
+   API=http://localhost:8000
+   J='content-type: application/json'
+   curl -s -c viewer.txt $API/api/auth/login -H "$J" -d '{"username":"viewer1","password":"password123"}'
+   curl -s -b viewer.txt $API/api/broadcasts/<방송 id>/donations -H "$J" -d '{"amount":5000}'   # 응답의 orderId
+   ```
+   브라우저(`viewer1` 창)에서 `http://localhost:3300/donations/success?paymentKey=fake&orderId=<orderId>&amount=5000`을 열면 "후원을 확정하지 못했습니다"가 나오고, 상태 확인에서 `failed`입니다.
+3. **금액을 바꾼 경우**: 새 주문을 만들고 같은 주소에서 `amount=100`으로 바꿔 열면 "결제 금액이 주문과 다릅니다."가 나옵니다. 서버는 결제 서비스에 승인을 요청하지 않고 `failed`로 기록합니다.
+4. **결제창에서 실패한 경우**: 결제창은 실패하면 `failUrl`로 돌아옵니다. 같은 상황을 새 주문으로 `http://localhost:3300/donations/fail?order=<orderId>&code=PAY_PROCESS_ABORTED&message=결제 실패`를 열어 확인하면 "후원에 실패했습니다"가 나오고 `failed`로 기록됩니다.
+
+### D. 승인 통지(웹훅)가 반복될 때
+
+로컬 서버(`localhost`)에는 토스페이먼츠가 통지를 보낼 수 없으므로, 결제 서비스가 보내는 것과 같은 형식의 통지를 `curl`로 보냅니다. 서버는 통지 내용을 믿지 않고 `paymentKey`로 결제 서비스에 조회해 확인합니다.
+
+1. A에서 확정된 주문의 `order_id`와 `payment_key`를 상태 확인으로 찾습니다(A의 성공 화면 주소에도 있습니다).
+2. 같은 통지를 세 번 보냅니다. 세 번 모두 `200`입니다.
+   ```bash
+   ORDER=<order_id>; PAY=<payment_key>
+   for i in 1 2 3; do
+     curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8000/api/payments/webhook -H 'content-type: application/json' \
+       -d "{\"eventType\":\"PAYMENT_STATUS_CHANGED\",\"createdAt\":\"2026-11-21T12:00:00.000000\",\"data\":{\"paymentKey\":\"$PAY\",\"orderId\":\"$ORDER\",\"status\":\"DONE\"}}"
+   done
+   curl -s http://localhost:8000/api/broadcasts/<방송 id>/donations
+   ```
+3. 합계·건수가 그대로(5,000원 · 1건)이고, 상태 확인에서 그 주문의 `approved_at`도 바뀌지 않습니다.
+4. 결제 서비스에 없는 결제로 통지를 보내면(`"paymentKey":"forged"`) `400`이고 아무것도 확정되지 않습니다. 이 서버에 없는 주문번호로 보내면 `200`이고 무시합니다(결제 서비스가 다시 보내지 않도록).
+5. 배포한 서버에서는 개발자센터 **웹훅** 메뉴에 `https://<도메인>/api/payments/webhook`을 `PAYMENT_STATUS_CHANGED` 이벤트로 등록하면 결제 서비스가 직접 통지를 보냅니다.
+
+확인이 끝나면 `rm viewer.txt`로 쿠키 파일을 지웁니다.

@@ -8,6 +8,7 @@ use crate::Route;
 use crate::api;
 use crate::auth::{RequireLogin, use_session};
 use crate::comments::{Comments, confirm};
+use crate::donations::Donations;
 use crate::live::LivePlayer;
 
 #[component]
@@ -86,6 +87,7 @@ pub fn BroadcastDetail(id: i64) -> Element {
                     {api::local_time(&b.created_at)}
                     " 시작"
                 }
+                Donations { key: "{b.id}", broadcast: b.clone() }
                 Comments { key: "{b.id}-{b.status.as_str()}", broadcast_id: b.id, live: b.status == BroadcastStatus::Live }
             }
         },

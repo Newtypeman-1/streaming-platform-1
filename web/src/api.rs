@@ -3,7 +3,8 @@
 use gloo_net::http::{Request, Response};
 use serde::de::DeserializeOwned;
 use shared::{
-    BroadcastResponse, CommentRequest, CommentResponse, Credentials, ErrorResponse, StartLiveRequest, StartLiveResponse,
+    BroadcastResponse, CommentRequest, CommentResponse, ConfirmDonationRequest, Credentials, DonationOrderResponse,
+    DonationRequest, DonationSummary, ErrorResponse, FailDonationRequest, StartLiveRequest, StartLiveResponse,
     UpdateBroadcastRequest, UserResponse,
 };
 use web_sys::{File, FormData};
@@ -129,6 +130,30 @@ pub async fn edit_comment(id: i64, body: &str) -> Result<CommentResponse, String
 
 pub async fn delete_comment(id: i64) -> Result<(), String> {
     expect_ok(Request::delete(&shared::comment_url(id)).send().await.map_err(|e| e.to_string())?).await
+}
+
+// ── 후원 ──
+
+pub async fn fetch_donations(broadcast_id: i64) -> Result<DonationSummary, String> {
+    parse(Request::get(&shared::donations_url(broadcast_id)).send().await.map_err(|e| e.to_string())?).await
+}
+
+pub async fn order_donation(broadcast_id: i64, amount: i64) -> Result<DonationOrderResponse, String> {
+    parse(send(Request::post(&shared::donations_url(broadcast_id)).json(&DonationRequest { amount })).await?).await
+}
+
+pub async fn confirm_donation(req: &ConfirmDonationRequest) -> Result<DonationOrderResponse, String> {
+    parse(send(Request::post(shared::DONATION_CONFIRM_URL).json(req)).await?).await
+}
+
+pub async fn fail_donation(order_id: &str, req: &FailDonationRequest) -> Result<DonationOrderResponse, String> {
+    parse(send(Request::post(&shared::donation_fail_url(order_id)).json(req)).await?).await
+}
+
+/// 1234567 → "1,234,567원" (브라우저 숫자 형식)
+pub fn won(amount: i64) -> String {
+    let n: String = js_sys::Number::from(amount as f64).to_locale_string("ko-KR").into();
+    format!("{n}원")
 }
 
 /// RFC 3339 시각을 브라우저 로캘 형식으로 보여준다.

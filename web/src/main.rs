@@ -3,10 +3,12 @@ use dioxus::prelude::*;
 mod api;
 mod auth;
 mod comments;
+mod donations;
 mod live;
 mod pages;
 
 use auth::{AccountMenu, Login, Signup};
+use donations::{DonationFail, DonationSuccess};
 use live::LiveStudio;
 use pages::{BroadcastDetail, BroadcastList, BroadcastNew};
 
@@ -25,10 +27,18 @@ enum Route {
     Login {},
     #[route("/signup")]
     Signup {},
+    // 결제창이 돌아오는 주소. 결제창이 붙여 준 쿼리를 통째로 받는다.
+    #[route("/donations/success?:..query")]
+    DonationSuccess { query: String },
+    #[route("/donations/fail?:..query")]
+    DonationFail { query: String },
 }
 
 const STYLE: Asset = asset!("/assets/main.css");
 const LIVE_JS: Asset = asset!("/assets/live.js");
+const PAYMENT_JS: Asset = asset!("/assets/payment.js");
+/// 토스페이먼츠 결제창 SDK v2
+const TOSS_SDK: &str = "https://js.tosspayments.com/v2/standard";
 
 fn main() {
     dioxus::launch(App);
@@ -40,6 +50,8 @@ fn App() -> Element {
     rsx! {
         document::Stylesheet { href: STYLE }
         document::Script { src: LIVE_JS }
+        document::Script { src: TOSS_SDK }
+        document::Script { src: PAYMENT_JS }
         Router::<Route> {}
     }
 }

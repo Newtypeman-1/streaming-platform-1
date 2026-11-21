@@ -70,3 +70,11 @@ a { color: inherit; text-decoration: none; }
 .comment p { margin: 0; white-space: pre-wrap; word-break: break-word; }
 .comment-form { display: flex; flex-direction: column; gap: 8px; }
 textarea { font: inherit; resize: vertical; min-height: 64px; }
+.donations { margin-top: 24px; display: flex; flex-direction: column; gap: 12px; max-width: 720px; }
+.donations h2 { font-size: 18px; margin: 0; }
+.donation-total { color: var(--accent); }
+.donations ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow-y: auto; }
+.donation { display: flex; gap: 10px; align-items: baseline; background: var(--surface); border-radius: 6px; padding: 8px 12px; }
+.donation-form { display: flex; flex-direction: column; gap: 8px; }
+.donation-form .inline-input { max-width: 200px; min-width: 120px; }
+.donation-result { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; max-width: 480px; }
