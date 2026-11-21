@@ -106,12 +106,12 @@ docker compose up -d
 cargo run -p server
 ```
 
-### 4) 웹 실행 (http://localhost:3000)
+### 4) 웹 실행 (http://localhost:3300)
 
-`dx serve`의 기본 포트(8080)는 다른 프로그램과 자주 겹쳐서 3000번을 지정합니다.
+`dx serve`의 기본 포트(8080)는 다른 프로그램과 자주 겹칩니다. 3000번은 Node.js 개발 서버와 겹칩니다. 그래서 3300번을 씁니다.
 
 ```bash
-cd web && dx serve --port 3000
+cd web && dx serve --port 3300
 ```
 
 개발 서버가 `/api` 요청을 API 서버로 프록시하므로 CORS 설정은 필요 없습니다.
@@ -126,7 +126,7 @@ Testcontainers가 PostgreSQL 컨테이너를 띄우므로 Docker가 실행 중�
 
 ## 직접 확인 절차
 
-1. 위 순서대로 PostgreSQL, API 서버, 웹을 실행하고 http://localhost:3000 에 접속합니다.
+1. 위 순서대로 PostgreSQL, API 서버, 웹을 실행하고 http://localhost:3300 에 접속합니다.
    - 처음에는 "아직 등록된 방송이 없습니다"가 보입니다.
 2. 오른쪽 위 **방송 등록**을 눌러 제목을 입력하고 mp4 영상을 선택한 뒤 **등록**을 누릅니다.
    - 테스트용 영상이 없다면 ffmpeg로 만들 수 있습니다.
