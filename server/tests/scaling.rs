@@ -4,7 +4,8 @@ mod common;
 
 use axum::http::StatusCode;
 use common::{app, db_url, get, unreachable_media, unreachable_payments};
-use server::AppState;
+use server::{AppState, with_instance_name};
+use tower::ServiceExt;
 
 #[tokio::test]
 async fn 상태_확인은_db에_연결되면_200() {
@@ -45,4 +46,15 @@ async fn 인스턴스_여러_개가_동시에_떠도_모두_기동한다() {
     let results: Vec<_> = futures_util::future::join_all(starts).await.into_iter().map(Result::unwrap).collect();
 
     assert!(results.iter().all(Result::is_ok), "{results:?}");
+}
+
+/// 여러 인스턴스 앞에서 요청이 어디로 갔는지 알 수 있게, 응답마다 처리한 인스턴스 이름을 붙인다.
+#[tokio::test]
+async fn 응답에_처리한_인스턴스_이름을_붙인다() {
+    let app = app().await;
+    let router = with_instance_name(app.router.clone(), "nadri-server-abc");
+
+    let res = router.oneshot(get("/api/broadcasts")).await.unwrap();
+
+    assert_eq!(res.headers()["x-instance"], "nadri-server-abc");
 }

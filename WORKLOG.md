@@ -218,3 +218,10 @@
 - 작업: 서버가 뜰 때 PostgreSQL advisory lock을 잡고 마이그레이션을 적용한 뒤 잠금 연결을 닫음
 - 이유: 빈 DB에 인스턴스 여러 개가 한꺼번에 뜨면 같은 마이그레이션을 동시에 적용하다 `duplicate key value violates unique constraint "pg_type_typname_nsp_index"`로 일부 인스턴스가 기동에 실패함. 잠금으로 하나씩 적용하게 하고, 잠금은 전용 연결에 걸어 그 연결을 닫으면 풀리므로 중간에 실패해도 남지 않음
 - 결과: 통합 테스트 1개(빈 DB에 4개 동시 기동 → 모두 성공) 추가. 단위 35 · 녹화 API 20 · 인증 API 9 · 댓글 API 12 · 후원 API 31 · 라이브 API 20 · 확장 3 모두 통과
+
+
+### 005-03 feat: 응답에 처리한 인스턴스 이름 표시
+- [링크](https://github.com/Newtypeman-1/streaming-platform-1/commit/005-03)
+- 작업: 모든 응답에 `X-Instance` 헤더로 처리한 인스턴스 이름을 붙임. 이름은 `INSTANCE_NAME`, 없으면 `HOSTNAME`(컨테이너에서는 Pod 이름), 둘 다 없으면 `local`
+- 이유: 여러 인스턴스 앞에서 요청이 실제로 나뉘어 처리되는지, 스케일이 바뀐 뒤 어느 인스턴스가 응답했는지 확인하기 위함
+- 결과: 통합 테스트 1개(지정한 이름이 `X-Instance`로 나감) 추가. 단위 35 · 녹화 API 20 · 인증 API 9 · 댓글 API 12 · 후원 API 31 · 라이브 API 20 · 확장 4 모두 통과

@@ -1,7 +1,7 @@
 use std::env;
 use std::time::Duration;
 
-use server::{AppState, MediaServer, PaymentGateway, end_dropped_streams, router};
+use server::{AppState, MediaServer, PaymentGateway, end_dropped_streams, router, with_instance_name};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
@@ -61,8 +61,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    // 컨테이너에서는 HOSTNAME 이 컨테이너(Pod) 이름이다
+    let instance = env::var("INSTANCE_NAME").or_else(|_| env::var("HOSTNAME")).unwrap_or_else(|_| "local".into());
+    let app = with_instance_name(router(state), &instance).layer(TraceLayer::new_for_http());
+
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await?;
-    tracing::info!("listening on http://localhost:{port} (videos: {storage_dir}, media: {media_url})");
-    axum::serve(listener, router(state).layer(TraceLayer::new_for_http())).await?;
+    tracing::info!("listening on http://localhost:{port} (instance: {instance}, videos: {storage_dir}, media: {media_url})");
+    axum::serve(listener, app).await?;
     Ok(())
 }
+

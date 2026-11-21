@@ -17,7 +17,9 @@ pub mod storage;
 
 use std::path::Path;
 
+use axum::http::{HeaderName, HeaderValue};
 use sea_orm::sqlx::{self, Connection};
+use tower_http::set_header::SetResponseHeaderLayer;
 use sea_orm::{Database, DatabaseConnection};
 use sea_orm_migration::MigratorTrait;
 
@@ -47,6 +49,15 @@ impl AppState {
         migrate(&db).await?;
         let storage = LocalVideoStorage::new(storage_dir)?;
         Ok(Self { db, storage, media, payments })
+    }
+}
+
+/// 응답마다 처리한 인스턴스 이름(`X-Instance`)을 붙인다.
+/// 이름이 헤더 값으로 쓸 수 없는 문자를 담고 있으면 붙이지 않는다.
+pub fn with_instance_name(app: axum::Router, name: &str) -> axum::Router {
+    match HeaderValue::from_str(name) {
+        Ok(value) => app.layer(SetResponseHeaderLayer::overriding(HeaderName::from_static("x-instance"), value)),
+        Err(_) => app,
     }
 }
 
