@@ -17,6 +17,7 @@ pub mod storage;
 
 use std::path::Path;
 
+use sea_orm::sqlx::{self, Connection};
 use sea_orm::{Database, DatabaseConnection};
 use sea_orm_migration::MigratorTrait;
 
@@ -43,8 +44,21 @@ impl AppState {
         payments: PaymentGateway,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let db = Database::connect(database_url).await?;
-        migration::Migrator::up(&db, None).await?;
+        migrate(&db).await?;
         let storage = LocalVideoStorage::new(storage_dir)?;
         Ok(Self { db, storage, media, payments })
     }
+}
+
+/// 마이그레이션 잠금 번호(PostgreSQL advisory lock). 값 자체에 의미는 없고 모든 인스턴스가 같기만 하면 된다.
+const MIGRATION_LOCK: i64 = 0x6e61_6472_69;
+
+/// 인스턴스 여러 개가 한꺼번에 떠도 마이그레이션은 하나씩 적용한다.
+/// 잠금은 풀에서 떼어 낸 전용 연결에 걸고, 그 연결을 닫으면 풀린다(중간에 실패해도 남지 않는다).
+async fn migrate(db: &DatabaseConnection) -> Result<(), Box<dyn std::error::Error>> {
+    let mut lock = db.get_postgres_connection_pool().acquire().await?.detach();
+    sqlx::query("SELECT pg_advisory_lock($1)").bind(MIGRATION_LOCK).execute(&mut lock).await?;
+    let result = migration::Migrator::up(db, None).await;
+    lock.close().await?;
+    Ok(result?)
 }
