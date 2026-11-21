@@ -56,6 +56,37 @@
 
 오류 응답은 `{ "status": 400, "detail": "제목을 입력해주세요." }` 형식입니다. 잘못된 입력에는 400, 없는 방송에는 404를 돌려줍니다.
 
+## 2단계: 휴대폰 라이브 송출과 시청
+
+### 송출 방식
+
+```
+휴대폰 브라우저 ──(SDP, HTTPS)──▶ API 서버 ──▶ MediaMTX ◀──(SDP)── API 서버 ◀── 시청자 브라우저
+       └──────────── 영상·음성 (WebRTC, UDP/TCP 8189) ─────▶ MediaMTX ───────────▶ 시청자 브라우저
+```
+
+- 브라우저 표준 WebRTC로 송출(WHIP)하고 시청(WHEP)합니다. 지연은 1초 안팎입니다.
+- 중계는 미디어 서버 [MediaMTX](https://github.com/bluenviron/mediamtx)가 맡습니다. Docker로 실행합니다.
+- 접속 정보(SDP)는 항상 API 서버를 거칩니다. API 서버가 송출 키와 방송 상태를 확인한 뒤 MediaMTX에 전달합니다. 그래서 MediaMTX의 신호 포트(8889)와 API 포트(9997)는 `127.0.0.1`에만 열립니다. 외부에는 영상 포트(8189)만 열립니다.
+
+### API (추가)
+
+| Method | Path | 설명 |
+| --- | --- | --- |
+| `POST` | `/api/broadcasts/live` | 라이브 시작 (`{"title": "..."}`) → `201` `{ broadcast, streamKey }` |
+| `POST` | `/api/broadcasts/{id}/whip` | 송출 연결. `Authorization: Bearer <streamKey>`, 본문 SDP offer → `201` SDP answer |
+| `POST` | `/api/broadcasts/{id}/whep` | 시청 연결. 본문 SDP offer → `201` SDP answer |
+| `POST` | `/api/broadcasts/{id}/end` | 라이브 종료. `Authorization: Bearer <streamKey>` → `200`. 이미 종료된 방송이면 그대로 돌려줍니다 |
+
+방송 응답에 `status`(`recorded` / `live` / `ended`)와 `endedAt`이 추가되었습니다. 라이브 방송은 `videoUrl`이 `null`입니다.
+
+| 상황 | 응답 |
+| --- | --- |
+| 송출 키가 없거나 틀림 | `401` |
+| 종료된 방송에 송출·시청 | `409` "방송 중이 아닙니다." |
+| 방송 중이지만 아직 영상이 들어오지 않음 | `409` "아직 방송 영상이 들어오지 않았습니다." (시청 화면이 3초마다 다시 시도) |
+| 미디어 서버에 연결할 수 없음 | `502` |
+
 ## 실행 방법
 
 ### 준비물
@@ -140,7 +171,7 @@ cd web && dx serve --port 3300
 cargo test -p server
 ```
 
-Testcontainers가 PostgreSQL 컨테이너를 띄우므로 Docker가 실행 중이어야 합니다.
+Testcontainers가 PostgreSQL 컨테이너를 띄우므로 Docker가 실행 중이어야 합니다. 라이브 테스트(`server/tests/live.rs`)는 가짜 MediaMTX를 띄우므로 MediaMTX 컨테이너는 필요 없습니다.
 
 ## 직접 확인 절차
 

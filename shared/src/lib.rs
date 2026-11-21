@@ -3,16 +3,55 @@
 
 use serde::{Deserialize, Serialize};
 
+/// 방송 상태. 녹화 방송은 처음부터 끝까지 `Recorded`, 라이브는 `Live` → `Ended`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BroadcastStatus {
+    Recorded,
+    Live,
+    Ended,
+}
+
+impl BroadcastStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Recorded => "recorded",
+            Self::Live => "live",
+            Self::Ended => "ended",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        [Self::Recorded, Self::Live, Self::Ended].into_iter().find(|status| status.as_str() == s)
+    }
+}
+
 /// 방송 목록/상세 응답.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BroadcastResponse {
     pub id: i64,
     pub title: String,
-    /// 영상 재생 주소 (Range 요청 지원)
-    pub video_url: String,
+    pub status: BroadcastStatus,
+    /// 녹화 영상 재생 주소 (Range 요청 지원). 라이브 방송은 없다.
+    pub video_url: Option<String>,
     /// RFC 3339 (예: 2026-11-19T10:00:00Z)
     pub created_at: String,
+    /// 라이브가 끝난 시각
+    pub ended_at: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StartLiveRequest {
+    pub title: String,
+}
+
+/// 라이브 시작 응답. 송출 키는 송출한 사람만 이 응답으로 한 번 받는다.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartLiveResponse {
+    pub broadcast: BroadcastResponse,
+    pub stream_key: String,
 }
 
 /// 오류 응답. RFC 9457 Problem Details 의 필드 이름을 따른다.
@@ -24,4 +63,19 @@ pub struct ErrorResponse {
 
 pub fn video_url(id: i64) -> String {
     format!("/api/broadcasts/{id}/video")
+}
+
+/// WebRTC 송출(WHIP). `Authorization: Bearer <송출 키>` 와 SDP offer 를 보낸다.
+pub fn whip_url(id: i64) -> String {
+    format!("/api/broadcasts/{id}/whip")
+}
+
+/// WebRTC 시청(WHEP). SDP offer 를 보낸다.
+pub fn whep_url(id: i64) -> String {
+    format!("/api/broadcasts/{id}/whep")
+}
+
+/// 라이브 종료. `Authorization: Bearer <송출 키>`.
+pub fn end_url(id: i64) -> String {
+    format!("/api/broadcasts/{id}/end")
 }

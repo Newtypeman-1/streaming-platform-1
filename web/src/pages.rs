@@ -19,8 +19,10 @@ pub fn BroadcastList() -> Element {
                 for b in list {
                     li { key: "{b.id}",
                         Link { to: Route::BroadcastDetail { id: b.id }, class: "card",
-                            // #t=0.1 : 첫 프레임을 썸네일처럼 보여준다
-                            video { src: "{b.video_url}#t=0.1", preload: "metadata", muted: true }
+                            if let Some(url) = &b.video_url {
+                                // #t=0.1 : 첫 프레임을 썸네일처럼 보여준다
+                                video { src: "{url}#t=0.1", preload: "metadata", muted: true }
+                            }
                             strong { "{b.title}" }
                             span { class: "meta", {api::local_time(&b.created_at)} }
                         }
@@ -41,7 +43,9 @@ pub fn BroadcastDetail(id: i64) -> Element {
         Some(Err(e)) => rsx! { p { class: "error", "{e}" } },
         Some(Ok(b)) => rsx! {
             article {
-                video { class: "player", src: "{b.video_url}", controls: true, autoplay: true }
+                if let Some(url) = &b.video_url {
+                    video { class: "player", src: "{url}", controls: true, autoplay: true }
+                }
                 h1 { "{b.title}" }
                 p { class: "meta", {api::local_time(&b.created_at)} " 등록" }
             }

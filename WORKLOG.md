@@ -73,3 +73,9 @@
 - 작업: docker-compose에 MediaMTX 1.21.4와 Caddy(`phone` 프로필) 추가, `mediamtx.yml`·`Caddyfile` 작성, `.env.example`에 `PUBLIC_HOST`·`MEDIAMTX_URL`·`MEDIAMTX_API_URL` 추가, README 환경변수·실행 순서 갱신
 - 이유: 휴대폰 브라우저 WebRTC 송출을 중계할 미디어 서버가 필요함. 브라우저는 HTTPS(또는 localhost)에서만 카메라를 허용하므로 휴대폰용 HTTPS 주소도 필요함. MediaMTX 신호(8889)·API(9997) 포트는 127.0.0.1에만 열어 API 서버만 쓰게 함
 - 결과: MediaMTX 기동 후 ffmpeg WHIP 송출 시 API에서 `ready: true` 확인. `https://<LAN IP>:3443` 접속 200 확인(IP 접속은 SNI가 없어 `default_sni` 지정이 필요했음)
+
+### 002-03 라이브 방송 API: 송출 키, WHIP/WHEP 중계, 종료, 끊긴 방송 자동 종료
+- [링크](https://github.com/Newtypeman-1/streaming-platform-1/commit/002-03)
+- 작업: 방송 상태(`recorded`/`live`/`ended`)와 종료 시각 추가(마이그레이션), `POST /api/broadcasts/live`(송출 키 발급), `/whip`·`/whep`(SDP를 MediaMTX로 중계), `/end`, 5초마다 영상이 끊긴 라이브를 종료하는 정리 작업, 목록에서 방송 중인 라이브를 맨 앞에. 웹은 `videoUrl`이 없을 수 있게 된 것만 맞춤
+- 이유: 로그인 없이도 방송을 연 화면만 송출·종료하도록 송출 키로 구분. SDP 교환을 API 서버가 맡아 권한 판단을 서버 코드 한곳에 둠. 휴대폰이 그냥 꺼지면 종료 요청이 오지 않으므로 미디어 서버 상태로 정리
+- 결과: 도메인 단위 테스트 6개, 가짜 MediaMTX를 띄운 라이브 통합 테스트 17개 추가. 단위 17 · 녹화 API 11 · 라이브 API 17 모두 통과. 실제 MediaMTX에서 ffmpeg 송출이 API 서버를 거쳐 연결되고, 송출을 끊으면 유예 30초 뒤 자동 종료되는 것 확인. 기존 개발 DB의 녹화 방송은 `recorded`로 유지

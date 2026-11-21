@@ -5,11 +5,16 @@ use axum::response::{IntoResponse, Response};
 use shared::ErrorResponse;
 
 use crate::broadcast::BroadcastError;
+use crate::live::LiveError;
+use crate::media::MediaError;
 
 #[derive(Debug)]
 pub enum AppError {
     BadRequest(String),
+    Unauthorized(String),
     NotFound(String),
+    Conflict(String),
+    BadGateway(String),
     Internal(String),
 }
 
@@ -17,7 +22,13 @@ impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, detail) = match self {
             AppError::BadRequest(detail) => (StatusCode::BAD_REQUEST, detail),
+            AppError::Unauthorized(detail) => (StatusCode::UNAUTHORIZED, detail),
             AppError::NotFound(detail) => (StatusCode::NOT_FOUND, detail),
+            AppError::Conflict(detail) => (StatusCode::CONFLICT, detail),
+            AppError::BadGateway(detail) => {
+                tracing::warn!("{detail}");
+                (StatusCode::BAD_GATEWAY, "방송 서버에 연결하지 못했습니다. 잠시 후 다시 시도해주세요.".to_string())
+            }
             AppError::Internal(detail) => {
                 tracing::error!("{detail}");
                 (StatusCode::INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다.".to_string())
@@ -30,6 +41,24 @@ impl IntoResponse for AppError {
 impl From<BroadcastError> for AppError {
     fn from(e: BroadcastError) -> Self {
         AppError::BadRequest(e.to_string())
+    }
+}
+
+impl From<LiveError> for AppError {
+    fn from(e: LiveError) -> Self {
+        match e {
+            LiveError::InvalidStreamKey => AppError::Unauthorized(e.to_string()),
+            LiveError::NotLive => AppError::Conflict(e.to_string()),
+        }
+    }
+}
+
+impl From<MediaError> for AppError {
+    fn from(e: MediaError) -> Self {
+        match e {
+            MediaError::NotStreaming => AppError::Conflict(e.to_string()),
+            MediaError::Failed(_) => AppError::BadGateway(e.to_string()),
+        }
     }
 }
 
