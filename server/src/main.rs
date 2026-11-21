@@ -31,11 +31,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tracing::warn!("TOSS_SECRET_KEY·TOSS_CLIENT_KEY 가 없어 후원 결제를 할 수 없습니다");
     }
 
+    let mut payments = PaymentGateway::new(&toss_api_url, &toss_secret_key, &toss_client_key);
+    // 결제 승인 실패 재현용 (테스트 키에서만 동작)
+    if let Ok(code) = env::var("TOSS_TEST_CODE")
+        && !code.is_empty()
+    {
+        tracing::warn!("결제 승인 요청에 테스트 코드 {code} 를 붙입니다");
+        payments = payments.with_test_code(&code);
+    }
+
     let state = AppState::connect(
         &database_url,
         &storage_dir,
         MediaServer::new(&media_url, &media_api_url),
-        PaymentGateway::new(&toss_api_url, &toss_secret_key, &toss_client_key),
+        payments,
     )
     .await?;
 

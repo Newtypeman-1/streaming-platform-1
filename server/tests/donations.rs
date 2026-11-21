@@ -390,3 +390,16 @@ async fn 없는_방송의_후원_내역은_404() {
     let (status, _, _) = app.send(get(&donations_url(9999))).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn 테스트_코드를_설정하면_결제_서비스에_실어_보내_승인_거절을_재현한다() {
+    let (mut app, broadcast, viewer) = setup().await;
+    let order = order(&app, &viewer, broadcast.id, 5000).await;
+    let payments = app.toss.gateway().with_test_code("INVALID_REJECT_CARD");
+    app.router = server::router(server::AppState { payments, ..app.state.clone() });
+    let (status, body) = confirm(&app, &viewer, "pay_1", &order.order_id, 5000).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let error: ErrorResponse = serde_json::from_slice(&body).unwrap();
+    assert!(error.detail.contains("INVALID_REJECT_CARD"), "{}", error.detail);
+    assert_eq!(order_status(&app, &order.order_id).await, DonationStatus::Failed);
+}

@@ -9,6 +9,8 @@ pub struct PaymentGateway {
     secret_key: String,
     /// 결제창을 띄울 때 브라우저가 쓰는 공개 키
     pub client_key: String,
+    /// 결제 승인 실패를 재현하는 테스트 코드 (테스트 키에서만 동작)
+    test_code: Option<String>,
 }
 
 impl PaymentGateway {
@@ -22,6 +24,7 @@ impl PaymentGateway {
             api_url: api_url.trim_end_matches('/').to_string(),
             secret_key: secret_key.to_string(),
             client_key: client_key.to_string(),
+            test_code: None,
         }
     }
 }
@@ -60,12 +63,21 @@ struct TossError {
 }
 
 impl PaymentGateway {
+    /// 결제 승인 요청에 테스트 코드 헤더를 붙여 실패를 재현한다. 라이브 키에서는 결제 서비스가 무시한다.
+    pub fn with_test_code(mut self, code: &str) -> Self {
+        self.test_code = Some(code.to_string());
+        self
+    }
+
     /// 결제 승인. 결제창 인증을 마친 결제를 실제로 승인한다.
     pub async fn confirm(&self, payment_key: &str, order_id: &str, amount: i64) -> Result<Payment, PaymentError> {
-        let req = self
+        let mut req = self
             .http
             .post(format!("{}/v1/payments/confirm", self.api_url))
             .json(&serde_json::json!({ "paymentKey": payment_key, "orderId": order_id, "amount": amount }));
+        if let Some(code) = &self.test_code {
+            req = req.header("TossPayments-Test-Code", code);
+        }
         self.send(req).await
     }
 

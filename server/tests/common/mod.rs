@@ -276,6 +276,10 @@ impl FakeToss {
                             return toss_error(StatusCode::UNAUTHORIZED, "UNAUTHORIZED_KEY", "인증되지 않은 시크릿 키입니다.");
                         }
                         *fake.confirm_count.lock().unwrap() += 1;
+                        // 테스트 환경에서 오류를 재현하는 헤더: 그 코드로 승인을 거절한다
+                        if let Some(code) = headers.get("TossPayments-Test-Code").and_then(|v| v.to_str().ok()) {
+                            return toss_error(StatusCode::FORBIDDEN, code, &format!("테스트 코드로 거절: {code}"));
+                        }
                         if let Some((status, code)) = fake.reject.lock().unwrap().clone() {
                             return toss_error(StatusCode::from_u16(status).unwrap(), &code, "결제 승인이 거절되었습니다.");
                         }
