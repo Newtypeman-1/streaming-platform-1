@@ -9,7 +9,7 @@ use axum::http::{Request, StatusCode, header};
 use axum::routing;
 use http_body_util::BodyExt;
 use server::{AppState, MediaServer, router};
-use shared::BroadcastResponse;
+use shared::{BroadcastResponse, ErrorResponse};
 use testcontainers_modules::postgres::Postgres;
 use testcontainers_modules::testcontainers::runners::AsyncRunner;
 use testcontainers_modules::testcontainers::{ContainerAsync, ImageExt};
@@ -57,11 +57,30 @@ pub fn unreachable_media() -> MediaServer {
 }
 
 impl TestApp {
+    /// 요청을 보내고 응답을 돌려준다. 오류 응답(4xx·5xx)은 모두 README 가 약속한
+    /// `ErrorResponse` JSON 이어야 하므로, 어떤 테스트에서든 아니면 여기서 실패한다.
     pub async fn send(&self, req: Request<Body>) -> (StatusCode, header::HeaderMap, Vec<u8>) {
         let res = self.router.clone().oneshot(req).await.unwrap();
         let (parts, body) = res.into_parts();
-        (parts.status, parts.headers, body.collect().await.unwrap().to_bytes().to_vec())
+        let body = body.collect().await.unwrap().to_bytes().to_vec();
+        if parts.status.is_client_error() || parts.status.is_server_error() {
+            assert_error_format(parts.status, &parts.headers, &body);
+        }
+        (parts.status, parts.headers, body)
     }
+}
+
+fn assert_error_format(status: StatusCode, headers: &header::HeaderMap, body: &[u8]) {
+    let text = String::from_utf8_lossy(body);
+    assert_eq!(
+        headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()),
+        Some("application/json"),
+        "오류 응답은 JSON 이어야 한다: {status} {text}"
+    );
+    let error: ErrorResponse =
+        serde_json::from_slice(body).unwrap_or_else(|_| panic!("오류 응답이 ErrorResponse 형식이 아니다: {status} {text}"));
+    assert_eq!(error.status, status.as_u16(), "본문의 status 가 응답 코드와 다르다: {text}");
+    assert!(!error.detail.is_empty(), "오류 메시지가 비어 있다: {status}");
 }
 
 pub fn get(uri: &str) -> Request<Body> {
