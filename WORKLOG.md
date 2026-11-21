@@ -232,3 +232,10 @@
 - 작업: 서버가 SIGTERM·Ctrl+C를 받으면 새 연결을 받지 않고, 처리 중인 요청에 응답한 뒤 종료
 - 이유: 스케일 인 때 오케스트레이터는 인스턴스에 SIGTERM을 보냄. 바로 끝나면 그 인스턴스가 처리하던 요청(업로드·댓글 작성 등)이 끊김
 - 결과: 단위 35 · 녹화 API 20 · 인증 API 9 · 댓글 API 12 · 후원 API 31 · 라이브 API 20 · 확장 4 모두 통과. 실제 종료 동작은 클러스터 스케일 인에서 확인(005-06)
+
+
+### 005-05 build: 서버 컨테이너 이미지
+- [링크](https://github.com/Newtypeman-1/streaming-platform-1/commit/005-05)
+- 작업: 저장소 루트 `Dockerfile` 추가. Rust 이미지에서 서버만 릴리스 빌드하고(레지스트리·빌드 결과 캐시), `debian:bookworm-slim`에 실행 파일과 인증서만 담아 일반 사용자(`nadri`)로 실행. 기본값 `SERVER_PORT=8000`, `VIDEO_STORAGE_DIR=/data/videos`
+- 이유: 서버를 여러 인스턴스로 띄우려면 어느 노드에서든 같은 실행 환경으로 뜨는 이미지가 필요함. 빌드 도구는 실행 이미지에 넣지 않음
+- 결과: `docker build -t nadri-server:local .` 성공(이미지 38.7MB). 컨테이너로 실행해 로컬 PostgreSQL에 접속 → `/api/health` `200`·`X-Instance` 헤더(컨테이너 이름)·방송 목록 응답 확인, `docker stop` 시 "처리 중인 요청을 마치고 종료" 로그 후 정상 종료
