@@ -203,8 +203,9 @@ async fn record_failure(
     if model.status() == DonationStatus::Done {
         return Err(DonationError::AlreadyDone.into());
     }
-    // 구매자가 결제창을 닫으면 결제 서비스가 이 코드를 준다
-    let status = if req.code == "PAY_PROCESS_CANCELED" { DonationStatus::Canceled } else { DonationStatus::Failed };
+    // 구매자가 결제창을 닫은 경우: 모바일은 failUrl 로, PC 는 결제창 SDK 오류로 알려 준다
+    let canceled = matches!(req.code.as_str(), "PAY_PROCESS_CANCELED" | "USER_CANCEL");
+    let status = if canceled { DonationStatus::Canceled } else { DonationStatus::Failed };
     mark_ended(&state, &model, status, &req.message.unwrap_or(req.code)).await?;
     order_json(&state, find_order(&state, &order_id).await?).await
 }

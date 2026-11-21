@@ -246,7 +246,7 @@
 | `GET` | `/api/broadcasts/{id}/donations` | - | 후원 내역·합계 `{ "total", "count", "donations": [{ "id", "donor", "amount", "approvedAt" }] }`. 확정된 후원만, 최근 순 |
 | `POST` | `/api/broadcasts/{id}/donations` | 필요 | 후원 주문 (`{"amount": 5000}`) → `201` 주문. 금액 범위 밖·소유자 없는 방송·자기 방송 `400` |
 | `POST` | `/api/donations/confirm` | 후원한 본인 | 결제 승인 확인 (`{"paymentKey", "orderId", "amount"}`) → `200` 확정된 주문. 금액 불일치·결제 서비스 거절 `400`, 끝난 주문·방송 없어짐 `409`, 결제 서비스 연결 실패 `502`. 이미 확정된 주문은 승인을 다시 요청하지 않고 같은 결과 |
-| `POST` | `/api/donations/{orderId}/fail` | 후원한 본인 | 결제창 실패·취소 기록 (`{"code", "message"}`) → `200`. `PAY_PROCESS_CANCELED`는 취소, 나머지는 실패. 확정된 주문은 `409` |
+| `POST` | `/api/donations/{orderId}/fail` | 후원한 본인 | 결제창 실패·취소 기록 (`{"code", "message"}`) → `200`. `PAY_PROCESS_CANCELED`(모바일 결제창 닫기)·`USER_CANCEL`(PC 결제창 닫기)은 취소, 나머지는 실패. 확정된 주문은 `409` |
 | `POST` | `/api/payments/webhook` | - | 결제 서비스의 결제 상태 변경 통지. 조회 결과로 확정 → `200`. 결제 서비스에 없는 결제 `400` |
 
 주문 응답 예시:

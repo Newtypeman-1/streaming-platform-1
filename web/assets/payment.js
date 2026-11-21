@@ -21,9 +21,8 @@ window.payment = {
       });
       return null;
     } catch (e) {
-      // PC 결제창을 닫으면 USER_CANCEL → 서버에는 결제창 취소 코드로 알린다
-      const code = e.code === 'USER_CANCEL' ? 'PAY_PROCESS_CANCELED' : (e.code || 'UNKNOWN');
-      return { code, message: e.message || String(e) };
+      // PC 결제창을 닫으면 USER_CANCEL. 취소인지 실패인지는 서버가 코드를 보고 정한다
+      return { code: e.code || 'UNKNOWN', message: e.message || String(e) };
     }
   },
 };

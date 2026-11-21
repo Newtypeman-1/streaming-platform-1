@@ -183,6 +183,17 @@ async fn 결제창을_닫으면_취소로_기록한다() {
 }
 
 #[tokio::test]
+async fn PC_결제창을_닫아_받은_오류_코드도_취소로_기록한다() {
+    let (app, broadcast, viewer) = setup().await;
+    let order = order(&app, &viewer, broadcast.id, 5000).await;
+    // 결제창 SDK 는 결제창을 닫으면 이 코드로 오류를 낸다
+    let (status, body) = report_fail(&app, &viewer, &order.order_id, "USER_CANCEL").await;
+    assert_eq!(status, StatusCode::OK);
+    let canceled: DonationOrderResponse = serde_json::from_slice(&body).unwrap();
+    assert_eq!(canceled.status, DonationStatus::Canceled);
+}
+
+#[tokio::test]
 async fn 결제창에서_실패하면_실패로_기록한다() {
     let (app, broadcast, viewer) = setup().await;
     let order = order(&app, &viewer, broadcast.id, 5000).await;
