@@ -153,6 +153,22 @@ async fn 승인이_거절되어도_결제_서비스에_조회해_이미_승인�
 }
 
 #[tokio::test]
+async fn 승인을_다시_요청해도_같은_멱등키를_실어_한_번만_승인되게_한다() {
+    let (app, broadcast, viewer) = setup().await;
+    let order = order(&app, &viewer, broadcast.id, 5000).await;
+    // 결제 서비스 오류(5xx)는 승인 여부를 알 수 없어 결제 대기로 남고, 다시 확인하면 승인을 다시 요청한다
+    *app.toss.reject.lock().unwrap() = Some((500, "FAILED_INTERNAL_SYSTEM_PROCESSING".into()));
+    let (first, _) = confirm(&app, &viewer, "pay_1", &order.order_id, 5000).await;
+    *app.toss.reject.lock().unwrap() = None;
+    let (again, _) = confirm(&app, &viewer, "pay_1", &order.order_id, 5000).await;
+    assert_eq!((first, again), (StatusCode::BAD_GATEWAY, StatusCode::OK));
+    let keys = app.toss.idempotency_keys.lock().unwrap().clone();
+    assert_eq!(keys.len(), 2);
+    assert!(keys[0].is_some(), "승인 요청에 Idempotency-Key 가 없습니다");
+    assert_eq!(keys[0], keys[1]);
+}
+
+#[tokio::test]
 async fn 결제_서비스에_연결하지_못하면_502_이고_결제_대기로_남긴다() {
     let (mut app, broadcast, viewer) = setup().await;
     let order = order(&app, &viewer, broadcast.id, 5000).await;

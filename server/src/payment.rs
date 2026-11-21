@@ -70,10 +70,12 @@ impl PaymentGateway {
     }
 
     /// 결제 승인. 결제창 인증을 마친 결제를 실제로 승인한다.
+    /// 주문번호를 멱등키로 실어, 응답이 끊겨 다시 요청해도 결제 서비스가 첫 응답을 돌려주게 한다.
     pub async fn confirm(&self, payment_key: &str, order_id: &str, amount: i64) -> Result<Payment, PaymentError> {
         let mut req = self
             .http
             .post(format!("{}/v1/payments/confirm", self.api_url))
+            .header("Idempotency-Key", order_id)
             .json(&serde_json::json!({ "paymentKey": payment_key, "orderId": order_id, "amount": amount }));
         if let Some(code) = &self.test_code {
             req = req.header("TossPayments-Test-Code", code);

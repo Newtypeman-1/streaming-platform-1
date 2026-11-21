@@ -243,6 +243,8 @@ pub struct FakeToss {
     pub payments: Arc<Mutex<HashMap<String, serde_json::Value>>>,
     /// 승인 요청 횟수
     pub confirm_count: Arc<Mutex<u32>>,
+    /// 승인 요청마다 받은 Idempotency-Key 헤더
+    pub idempotency_keys: Arc<Mutex<Vec<Option<String>>>>,
     /// Some((HTTP 상태, 오류 코드)) 이면 승인 요청을 거절한다
     pub reject: Arc<Mutex<Option<(u16, String)>>>,
     /// Some 이면 요청과 다른 금액으로 승인했다고 응답한다
@@ -276,6 +278,8 @@ impl FakeToss {
                             return toss_error(StatusCode::UNAUTHORIZED, "UNAUTHORIZED_KEY", "인증되지 않은 시크릿 키입니다.");
                         }
                         *fake.confirm_count.lock().unwrap() += 1;
+                        let key = headers.get("Idempotency-Key").and_then(|v| v.to_str().ok()).map(String::from);
+                        fake.idempotency_keys.lock().unwrap().push(key);
                         // 테스트 환경에서 오류를 재현하는 헤더: 그 코드로 승인을 거절한다
                         if let Some(code) = headers.get("TossPayments-Test-Code").and_then(|v| v.to_str().ok()) {
                             return toss_error(StatusCode::FORBIDDEN, code, &format!("테스트 코드로 거절: {code}"));
