@@ -23,6 +23,8 @@ PLATFORM="linux/$(ssh "$VM" dpkg --print-architecture)"
 docker build --platform "$PLATFORM" -t "nadri-server:$TAG" .
 
 # 2. 웹 앱 정적 파일, 다운로드 페이지, 데스크톱 설치 파일(GitHub Release 에서)
+#    dx 는 빌드 결과 디렉터리에 예전 빌드의 파일(이름에 해시가 붙은 js·wasm)을 남겨 두므로 비우고 빌드한다
+rm -rf target/dx/web/release/web/public
 (cd web && dx bundle --platform web --release)
 rm -rf "$SITE" && mkdir -p "$SITE/downloads"
 cp -R target/dx/web/release/web/public "$SITE/web"
