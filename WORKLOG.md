@@ -313,3 +313,13 @@
   - `.github/workflows/desktop.yml`: macOS arm64·macOS x64(`.dmg`), Windows x64(NSIS `-setup.exe`)를 빌드. Windows·macOS arm64에서는 클라이언트 테스트도 실행. `desktop-v*` 태그를 올리면 설치 파일과 `SHA256SUMS.txt`를 GitHub Release로 올림. 접속할 서버 주소는 저장소 변수 `NADRI_SERVER_URL`로 바꿀 수 있음
 - 이유: Windows 설치 파일은 이 컴퓨터(macOS)에서 만들 수 없어 OS별 빌드 환경에서 만들고, 다운로드 페이지가 받을 수 있는 고정된 파일 이름과 위치(Release)가 필요함
 - 결과: 이 컴퓨터에서 `dx bundle`로 `Nadri_0.1.0_aarch64.dmg`(4.3MB)와 `Nadri_0.1.0_x86_64.dmg` 생성. arm64 앱을 실행해 방송 목록 조회, 라이브(연속 2회)·녹화 재생 확인. 워크플로 문법은 actionlint로 검사
+
+
+### 006-06 feat: 데스크톱 클라이언트 다운로드 페이지
+- [링크](https://github.com/Newtypeman-1/streaming-platform-1/commit/006-06)
+- 작업
+  - `deploy/oci/download/index.html`: OS별 다운로드 링크(Windows x64 설치 파일, macOS arm64·x64 디스크 이미지), 지원 OS·아키텍처 표, Windows·macOS 설치·실행 방법, 서명하지 않은 앱의 첫 실행 경고(SmartScreen, Gatekeeper)를 넘기는 방법, SHA-256 체크섬 링크. 접속한 OS에 맞는 파일을 강조
+  - `Caddyfile`: `/download/`는 다운로드 페이지, `/downloads/...`는 설치 파일로 제공
+  - `deploy.sh`: 다운로드 페이지를 함께 올리고, `DESKTOP_RELEASE`(예: `desktop-v0.1.0`)를 주면 GitHub Release의 설치 파일과 체크섬을 받아 VM에 올림
+- 이유: 사용자가 공개 주소에서 자기 OS에 맞는 설치 파일을 받아 혼자 설치할 수 있게 하기 위함
+- 결과: 배포 구성을 이 컴퓨터에서 띄워 `/download` → `308` → `/download/` `200`, 설치 파일·체크섬 `200`, 없는 파일 `404` 확인. 폭 375px 화면에서 가로 스크롤 없이 카드가 한 줄씩 표시됨

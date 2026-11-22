@@ -8,6 +8,13 @@
 		reverse_proxy server:8000
 	}
 
+	# 데스크톱 클라이언트 다운로드 페이지(/download/)와 설치 파일(/downloads/...)
+	@download path /download /download/* /downloads/*
+	handle @download {
+		root * /srv/site
+		file_server
+	}
+
 	# 웹 앱. 주소창에서 바로 연 하위 경로(/broadcasts/1 등)도 앱이 그리도록 index.html 로 보낸다.
 	handle {
 		root * /srv/site/web

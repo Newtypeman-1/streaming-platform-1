@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>나드리 데스크톱 다운로드</title>
+<meta name="description" content="나드리 데스크톱 앱(Windows·macOS) 다운로드와 설치 방법">
+<style>
+  :root { color-scheme: dark; --bg: #0e0e10; --panel: #18181b; --line: #2f2f35; --text: #efeff1; --muted: #adadb8; --accent: #9147ff; --accent-hover: #772ce8; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; line-height: 1.6; }
+  header { padding: 14px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  header a { color: #a970ff; font-size: 20px; font-weight: 700; text-decoration: none; }
+  main { max-width: 880px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { margin: 0 0 4px; font-size: 26px; }
+  h2 { margin: 36px 0 8px; font-size: 20px; }
+  h3 { margin: 18px 0 4px; font-size: 16px; }
+  p, li { color: var(--muted); }
+  strong, code { color: var(--text); }
+  code { background: #26262c; padding: 1px 5px; border-radius: 3px; font-size: 14px; word-break: break-all; }
+  pre { background: #26262c; padding: 10px 12px; border-radius: 4px; overflow-x: auto; }
+  pre code { padding: 0; background: none; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 20px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 16px; display: flex; flex-direction: column; gap: 6px; }
+  .card.recommended { border-color: var(--accent); }
+  .card .os { font-size: 18px; font-weight: 700; color: var(--text); }
+  .card .arch { font-size: 14px; }
+  .card .tag { display: none; align-self: flex-start; font-size: 12px; background: var(--accent); color: #fff; border-radius: 3px; padding: 0 6px; }
+  .card.recommended .tag { display: inline-block; }
+  .button { margin-top: auto; display: block; text-align: center; background: var(--accent); color: #fff; text-decoration: none; border-radius: 4px; padding: 9px 12px; font-weight: 600; }
+  .button:hover { background: var(--accent-hover); }
+  .file { font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); font-size: 14px; }
+  th { color: var(--text); }
+  td { color: var(--muted); }
+  a { color: #bf94ff; }
+</style>
+</head>
+<body>
+<header><a href="/">나드리</a></header>
+<main>
+  <h1>나드리 데스크톱</h1>
+  <p>브라우저 없이 나드리의 라이브와 녹화 방송을 볼 수 있는 앱입니다. 방송 목록을 보고, 고른 방송을 바로 재생합니다.</p>
+
+  <div class="cards">
+    <section class="card" data-os="windows">
+      <span class="tag">이 컴퓨터에 맞는 파일</span>
+      <span class="os">Windows</span>
+      <span class="arch">Windows 10·11, 64비트(x64)</span>
+      <a class="button" href="/downloads/nadri-windows-x64-setup.exe" download>설치 파일 받기</a>
+      <span class="file">nadri-windows-x64-setup.exe</span>
+    </section>
+    <section class="card" data-os="mac-arm">
+      <span class="tag">이 컴퓨터에 맞는 파일</span>
+      <span class="os">macOS · Apple Silicon</span>
+      <span class="arch">M1 이후 칩(arm64), macOS 11 이상</span>
+      <a class="button" href="/downloads/nadri-macos-arm64.dmg" download>디스크 이미지 받기</a>
+      <span class="file">nadri-macos-arm64.dmg</span>
+    </section>
+    <section class="card" data-os="mac-intel">
+      <span class="tag">이 컴퓨터에 맞는 파일</span>
+      <span class="os">macOS · Intel</span>
+      <span class="arch">Intel 칩(x86_64), macOS 11 이상</span>
+      <a class="button" href="/downloads/nadri-macos-x64.dmg" download>디스크 이미지 받기</a>
+      <span class="file">nadri-macos-x64.dmg</span>
+    </section>
+  </div>
+  <p>내 Mac의 칩은 Apple 메뉴 → <strong>이 Mac에 관하여</strong>의 "칩" 또는 "프로세서" 항목에서 볼 수 있습니다.
+     파일 무결성은 <a href="/downloads/SHA256SUMS.txt">SHA-256 체크섬</a>으로 확인할 수 있습니다.</p>
+
+  <h2>지원 환경</h2>
+  <table>
+    <thead><tr><th>OS</th><th>아키텍처</th><th>파일</th></tr></thead>
+    <tbody>
+      <tr><td>Windows 10·11</td><td>x64 (ARM64 Windows는 x64 에뮬레이션으로 실행)</td><td>NSIS 설치 파일 (.exe)</td></tr>
+      <tr><td>macOS 11 이상</td><td>arm64 (Apple Silicon)</td><td>디스크 이미지 (.dmg)</td></tr>
+      <tr><td>macOS 11 이상</td><td>x86_64 (Intel)</td><td>디스크 이미지 (.dmg)</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Windows에 설치하기</h2>
+  <ol>
+    <li><code>nadri-windows-x64-setup.exe</code>를 내려받아 실행합니다.</li>
+    <li>"Windows의 PC 보호" 창이 뜨면 <strong>추가 정보</strong> → <strong>실행</strong>을 누릅니다. 코드 서명을 하지 않은 앱이라 처음 한 번 나오는 경고입니다.</li>
+    <li>설치를 마치면 시작 메뉴의 <strong>Nadri</strong>로 실행합니다.</li>
+    <li>앱 창이 비어 있거나 열리지 않으면 화면 표시에 쓰는 <a href="https://developer.microsoft.com/microsoft-edge/webview2/">Microsoft Edge WebView2 런타임</a>을 설치합니다. Windows 11과 최근 업데이트한 Windows 10에는 이미 들어 있습니다.</li>
+    <li>지울 때는 설정 → 앱 → 설치된 앱에서 <strong>Nadri</strong>를 제거합니다.</li>
+  </ol>
+
+  <h2>macOS에 설치하기</h2>
+  <ol>
+    <li>내 Mac에 맞는 <code>.dmg</code>를 내려받아 엽니다.</li>
+    <li>열린 창에서 <strong>Nadri</strong>를 <strong>응용 프로그램</strong> 폴더로 끌어 놓습니다.</li>
+    <li>응용 프로그램 폴더에서 <strong>Nadri</strong>를 엽니다.</li>
+  </ol>
+  <h3>"열 수 없습니다" 또는 "손상되었기 때문에 열 수 없습니다"가 뜰 때</h3>
+  <p>Apple 개발자 인증서로 서명·공증하지 않은 앱이라, 인터넷에서 받은 파일을 처음 열 때 macOS가 막습니다. 아래 둘 중 하나로 한 번만 허용하면 됩니다.</p>
+  <ul>
+    <li>시스템 설정 → <strong>개인정보 보호 및 보안</strong> 아래쪽의 "Nadri"이(가) 차단되었다는 안내에서 <strong>그래도 열기</strong>를 누릅니다.</li>
+    <li>또는 터미널에서 다운로드 표시를 지운 뒤 다시 엽니다.
+      <pre><code>xattr -dr com.apple.quarantine /Applications/Nadri.app</code></pre></li>
+  </ul>
+
+  <h2>사용하기</h2>
+  <ul>
+    <li>왼쪽 목록에서 방송을 고르면 오른쪽에서 재생됩니다. <strong>LIVE</strong>는 지금 방송 중인 라이브, <strong>녹화</strong>는 올라온 영상입니다.</li>
+    <li>라이브는 소리를 끈 채로 시작합니다. 플레이어의 음소거를 해제하면 소리가 나옵니다.</li>
+    <li>새 방송이 보이지 않으면 오른쪽 위 <strong>새로고침</strong>을 누릅니다.</li>
+    <li>로그인, 댓글, 후원, 방송하기는 <a href="/">웹</a>에서 할 수 있습니다.</li>
+  </ul>
+</main>
+<script>
+  // 접속한 OS 에 맞는 파일을 강조한다 (Mac 의 칩 종류는 브라우저가 알려주지 않으므로 Mac 은 둘 다 강조)
+  (function () {
+    var ua = navigator.userAgent;
+    var os = /Windows/.test(ua) ? ['windows'] : /Macintosh|Mac OS X/.test(ua) ? ['mac-arm', 'mac-intel'] : [];
+    os.forEach(function (name) {
+      var card = document.querySelector('[data-os="' + name + '"]');
+      if (card) card.classList.add('recommended');
+    });
+  })();
+</script>
+</body>
+</html>
