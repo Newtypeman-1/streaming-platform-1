@@ -1,0 +1,33 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  font-family: -apple-system, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  background: #0e0e10; color: #efeff1;
+}
+#main { height: 100%; display: flex; flex-direction: column; }
+
+header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: #18181b; border-bottom: 1px solid #2f2f35; }
+header h1 { margin: 0; font-size: 20px; color: #a970ff; }
+header .server { flex: 1; font-size: 12px; color: #adadb8; }
+button { background: #9147ff; color: #fff; border: 0; border-radius: 4px; padding: 6px 12px; cursor: pointer; }
+button:hover { background: #772ce8; }
+
+main { flex: 1; display: flex; min-height: 0; }
+aside { width: 320px; overflow-y: auto; border-right: 1px solid #2f2f35; background: #18181b; }
+aside ul { list-style: none; margin: 0; padding: 0; }
+aside li { padding: 10px 14px; border-bottom: 1px solid #26262c; cursor: pointer; }
+aside li:hover { background: #26262c; }
+aside li.selected { background: #2f2f35; }
+.title { margin-top: 4px; font-weight: 600; }
+.meta { font-size: 12px; color: #adadb8; }
+
+.badge { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 3px; background: #3a3a3d; }
+.badge.live { background: #eb0400; font-weight: 700; }
+
+.player { flex: 1; padding: 16px 20px; overflow-y: auto; }
+.player h2 { margin: 0 0 4px; }
+video { width: 100%; max-height: calc(100vh - 180px); margin-top: 12px; background: #000; border-radius: 4px; }
+.note { color: #adadb8; padding: 0 14px; }
+.player .note { padding: 0; }
+.error { color: #ff6b6b; padding: 0 14px; }
+.player .error { padding: 0; }

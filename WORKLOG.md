@@ -287,3 +287,13 @@
   - `deploy.sh`: 이 컴퓨터에서 서버 이미지(linux/arm64)와 웹 앱을 빌드해 VM에 올리고 `docker compose up -d`, 공개 주소의 `/api/health`로 확인
 - 이유: Always Free VM 한 대에서 비밀 값과 서비스 주소만 바꿔 같은 구성으로 띄우기 위함. 빌드는 이 컴퓨터(arm64)에서 해 VM 자원을 서비스에만 씀
 - 결과: 같은 구성을 이 컴퓨터에서 도메인 `localhost`로 띄워 확인. `/api/health` `200`, HTTP 요청은 `308`로 HTTPS 이동, 회원가입 응답 쿠키에 `Secure`, 웹 앱 하위 경로 `200`, WASM `zstd` 압축 전송(2.3MB → 633KB)
+
+
+### 006-03 feat: 데스크톱 클라이언트에서 방송 목록 조회와 재생
+- [링크](https://github.com/Newtypeman-1/streaming-platform-1/commit/006-03)
+- 작업: 워크스페이스에 `desktop` 크레이트(Dioxus desktop) 추가
+  - `api.rs`: 서버 주소를 붙인 절대 주소로 방송 목록 조회, 녹화 영상 주소, 라이브 시청 신호(WHEP: SDP offer → answer). 오류 응답은 서버의 오류 메시지를, JSON이 아닌 오류(프록시의 502 등)는 상태 코드를, 연결 실패는 서버 주소와 함께 안내
+  - 서버 주소: 실행 시 `NADRI_SERVER_URL` → 빌드 시 `NADRI_SERVER_URL` → 기본값 `https://nadri.live`
+  - 화면: 왼쪽 방송 목록(상태·제목·방송한 사람·시각, 새로고침), 오른쪽 플레이어. 녹화 방송은 `<video>`, 라이브는 웹뷰의 WebRTC로 재생
+- 이유: 웹뷰 안의 JS가 서버로 직접 요청하면 출처가 달라 막히므로(CORS) 서버 호출은 앱(Rust)이 하고, 웹뷰는 영상 재생만 맡음. 서버에 CORS 설정을 열지 않아도 됨
+- 결과: API 테스트 8개 통과. 배포 구성(`deploy/oci/compose.yml`)을 이 컴퓨터에서 띄우고 macOS(arm64)에서 앱을 실행해 방송 목록 2개 표시, 녹화 방송 재생(640×360, 재생 시간 증가), ffmpeg로 송출한 라이브 재생(640×360, "라이브 재생 중") 확인
