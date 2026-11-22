@@ -17,8 +17,10 @@ SITE=target/oci-site
 
 ssh "$VM" "test -f $DEST/.env" || { echo "$VM:$DEST/.env 가 없습니다. deploy/oci/.env.example 을 복사해 채워 주세요."; exit 1; }
 
-# 1. 서버 이미지 (VM 이 arm64 라 linux/arm64 로 빌드)
-docker build --platform linux/arm64 -t "nadri-server:$TAG" .
+# 1. 서버 이미지. VM 의 CPU 아키텍처에 맞춰 빌드한다 (A1.Flex 는 arm64, E2.1.Micro 는 amd64).
+#    이 컴퓨터와 아키텍처가 다르면 에뮬레이션으로 빌드하므로 첫 빌드가 오래 걸린다.
+PLATFORM="linux/$(ssh "$VM" dpkg --print-architecture)"
+docker build --platform "$PLATFORM" -t "nadri-server:$TAG" .
 
 # 2. 웹 앱 정적 파일, 다운로드 페이지, 데스크톱 설치 파일(GitHub Release 에서)
 (cd web && dx bundle --platform web --release)

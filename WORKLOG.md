@@ -344,3 +344,10 @@
 - 작업: 데스크톱 앱의 기본 서버 주소를 `https://nadri.me`로 바꿈. 배포 환경 예시(`NADRI_DOMAIN`), 설치 파일 Release 안내 주소, 점검 스크립트 예시도 같은 도메인으로 맞춤
 - 이유: 실제로 등록한 도메인이 `nadri.me`(Cloudflare Registrar)라 설치 파일을 받은 앱이 다른 주소로 접속하지 않게 하기 위함
 - 결과: 클라이언트 API 테스트 8개 통과
+
+
+### 006-10 fix: 메모리 1GB·x86_64 VM 에서도 배포되게 함
+- [링크](https://github.com/Newtypeman-1/streaming-platform-1/commit/006-10)
+- 작업: `setup-vm.sh`에 스왑 2GB(재부팅 후에도 유지) 추가. `deploy.sh`가 VM의 CPU 아키텍처(`dpkg --print-architecture`)를 읽어 서버 이미지를 `linux/amd64` 또는 `linux/arm64`로 빌드
+- 이유: 도쿄 리전에 A1(arm64) 재고가 없어 무료 대안 `VM.Standard.E2.1.Micro`(x86_64, 메모리 1GB)를 씀. 메모리가 작아 DB·미디어 서버·API·Caddy가 함께 뜰 때 메모리 부족이 생길 수 있고, 이미지 아키텍처가 맞지 않으면 실행되지 않음. 나중에 A1으로 옮겨도 스크립트를 고치지 않아도 됨
+- 결과: VM(Ubuntu 24.04.5, x86_64, 952MB)에서 `setup-vm.sh` 실행 → Docker 29.1·Compose 2.40 설치, 스왑 2047MB, iptables에 80·443(TCP·UDP)·8189(TCP·UDP) 허용 후 저장. 외부에서 TCP 80·443·8189 응답, UDP 443·8189 도달 확인. 이 컴퓨터에서 `linux/amd64` 서버 이미지 빌드 성공(39MB)

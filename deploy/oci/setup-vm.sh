@@ -21,7 +21,16 @@ sudo apt-get install -y docker.io docker-compose-v2
 sudo systemctl enable --now docker
 sudo usermod -aG docker "$USER"
 
-# 3. 배포 디렉터리
+# 3. 스왑 2GB. 메모리가 1GB 인 VM(E2.1.Micro)에서 DB·미디어 서버·API·Caddy 가 함께 떠도 메모리 부족으로 죽지 않게 한다.
+if ! swapon --show=NAME --noheadings | grep -qx /swapfile; then
+  sudo fallocate -l 2G /swapfile
+  sudo chmod 600 /swapfile
+  sudo mkswap /swapfile
+  sudo swapon /swapfile
+  grep -q '^/swapfile ' /etc/fstab || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+fi
+
+# 4. 배포 디렉터리
 sudo mkdir -p /opt/nadri
 sudo chown "$USER" /opt/nadri
 
