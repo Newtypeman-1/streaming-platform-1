@@ -275,3 +275,15 @@
 - 작업: 회원가입·로그인 응답에서 앞단 프록시가 붙인 `X-Forwarded-Proto: https`를 보고 세션 쿠키에 `Secure`를 붙임. 프록시 없이 받은 요청(개발 환경 `http://localhost`)에는 붙이지 않음
 - 이유: 배포 환경은 HTTPS 프록시(Caddy) 뒤에서 동작함. 로그인 쿠키가 평문 HTTP 요청에 실려 나가지 않게 하고, 로컬 개발 서버에서는 지금처럼 로그인할 수 있게 하기 위함
 - 결과: 단위 35 · 녹화 API 20 · 인증 API 11 · 댓글 API 12 · 후원 API 31 · 라이브 API 20 · 확장 4 모두 통과
+
+
+### 006-02 feat: OCI VM 한 대에 서비스를 띄우는 배포 구성
+- [링크](https://github.com/Newtypeman-1/streaming-platform-1/commit/006-02)
+- 작업: `deploy/oci/` 추가
+  - `compose.yml`: PostgreSQL · MediaMTX · API 서버 · Caddy. 밖으로 여는 포트는 80·443(Caddy)과 8189(WebRTC 영상)뿐이고, DB·MediaMTX 제어 API·서버 포트는 내부 네트워크에만 둠. 모든 서비스 `restart: unless-stopped`
+  - `Caddyfile`: 도메인으로 HTTPS(Let's Encrypt 자동 발급·갱신), HTTP는 HTTPS로 넘김, `/api/*`는 서버로 프록시, 나머지는 웹 앱 정적 파일(하위 경로는 `index.html`)
+  - `.env.example`: 도메인, VM 공인 IP, DB 계정, 결제 테스트 키, 서버 이미지 태그. 실제 값은 VM의 `/opt/nadri/.env`에만 둠
+  - `setup-vm.sh`: VM 안 iptables에 80·443·8189 허용(재부팅 후 유지), Docker·compose 설치, `/opt/nadri` 생성
+  - `deploy.sh`: 이 컴퓨터에서 서버 이미지(linux/arm64)와 웹 앱을 빌드해 VM에 올리고 `docker compose up -d`, 공개 주소의 `/api/health`로 확인
+- 이유: Always Free VM 한 대에서 비밀 값과 서비스 주소만 바꿔 같은 구성으로 띄우기 위함. 빌드는 이 컴퓨터(arm64)에서 해 VM 자원을 서비스에만 씀
+- 결과: 같은 구성을 이 컴퓨터에서 도메인 `localhost`로 띄워 확인. `/api/health` `200`, HTTP 요청은 `308`로 HTTPS 이동, 회원가입 응답 쿠키에 `Secure`, 웹 앱 하위 경로 `200`, WASM `zstd` 압축 전송(2.3MB → 633KB)

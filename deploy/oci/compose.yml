@@ -1,0 +1,74 @@
+# OCI VM 한 대에 서비스 전체를 띄운다. VM 의 /opt/nadri 에서 실행한다(deploy/oci/deploy.sh 가 파일을 올려 준다).
+# 값은 같은 디렉터리의 .env 에서 읽는다(.env.example 참고). 밖으로 여는 포트는 80·443(Caddy)과 8189(WebRTC)뿐이다.
+name: nadri
+
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      retries: 10
+
+  # 라이브 영상 중계 (WebRTC WHIP 송출 / WHEP 시청). 신호(SDP)는 API 서버를 거치고, 영상만 8189 로 직접 주고받는다.
+  mediamtx:
+    image: bluenviron/mediamtx:1.21.4
+    restart: unless-stopped
+    environment:
+      # 브라우저·데스크톱 앱이 영상을 주고받을 때 접속할 VM 공인 IP (ICE 후보)
+      MTX_WEBRTCADDITIONALHOSTS: ${PUBLIC_IP}
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+    ports:
+      - "8189:8189/udp"
+      - "8189:8189/tcp"
+
+  server:
+    image: nadri-server:${SERVER_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      MEDIAMTX_URL: http://mediamtx:8889
+      MEDIAMTX_API_URL: http://mediamtx:9997
+      TOSS_API_URL: ${TOSS_API_URL:-https://api.tosspayments.com}
+      TOSS_CLIENT_KEY: ${TOSS_CLIENT_KEY:-}
+      TOSS_SECRET_KEY: ${TOSS_SECRET_KEY:-}
+      INSTANCE_NAME: ${INSTANCE_NAME:-oci-1}
+    volumes:
+      - videos:/data/videos
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mediamtx:
+        condition: service_started
+
+  # HTTPS (Let's Encrypt 인증서 자동 발급·갱신), API 프록시, 웹·다운로드 페이지 정적 파일
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      NADRI_DOMAIN: ${NADRI_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./site:/srv/site:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    depends_on:
+      - server
+
+volumes:
+  postgres-data:
+  videos:
+  caddy-data:
+  caddy-config:
