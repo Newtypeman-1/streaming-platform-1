@@ -46,13 +46,15 @@ fn App() -> Element {
                     Some(Ok(broadcasts)) => rsx! {
                         ul {
                             for b in broadcasts.clone() {
-                                li {
-                                    key: "{b.id}",
-                                    class: if selected().is_some_and(|s| s.id == b.id) { "selected" },
-                                    onclick: move |_| selected.set(Some(b.clone())),
-                                    StatusBadge { status: b.status }
-                                    div { class: "title", "{b.title}" }
-                                    div { class: "meta", "{owner(&b)} · {short_time(&b.created_at)}" }
+                                li { key: "{b.id}",
+                                    // 버튼이라 키보드(Tab·Enter)와 보조기기로도 고를 수 있다
+                                    button {
+                                        class: if selected().is_some_and(|s| s.id == b.id) { "item selected" } else { "item" },
+                                        onclick: move |_| selected.set(Some(b.clone())),
+                                        StatusBadge { status: b.status }
+                                        div { class: "title", "{b.title}" }
+                                        div { class: "meta", "{owner(&b)} · {short_time(&b.created_at)}" }
+                                    }
                                 }
                             }
                         }
