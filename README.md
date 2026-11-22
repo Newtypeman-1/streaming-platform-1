@@ -11,6 +11,8 @@
 | 라이브 | 브라우저 WebRTC (WHIP 송출 / WHEP 시청), MediaMTX 1.21 |
 | 결제 | 토스페이먼츠 주문서형 결제(SDK v2)·결제 API (테스트 키) |
 | 배포(로컬) | Docker 이미지, kind(Kubernetes), HPA + metrics-server |
+| 배포(클라우드) | OCI Always Free VM(Ubuntu, arm64), Docker Compose, Caddy(HTTPS, Let's Encrypt) |
+| 데스크톱 | Dioxus 0.7 desktop (WebView), dx bundle(dmg·NSIS), GitHub Actions |
 | 부하 | k6 (Docker) |
 | 테스트 | cargo test, Testcontainers(PostgreSQL) |
 
@@ -18,12 +20,15 @@
 .
 ├── server/             axum API 서버 (+ DB 마이그레이션)
 ├── web/                Dioxus 웹 클라이언트
-├── shared/             서버와 웹이 함께 쓰는 API 타입
+├── desktop/            Dioxus 데스크톱 클라이언트 (Windows·macOS)
+├── shared/             서버와 클라이언트가 함께 쓰는 API 타입
 ├── docker-compose.yml  로컬 PostgreSQL, MediaMTX(라이브 중계), Caddy(휴대폰용 HTTPS)
 ├── mediamtx.yml        MediaMTX 설정
 ├── Caddyfile           휴대폰용 HTTPS 프록시 설정
 ├── Dockerfile          API 서버 컨테이너 이미지
 ├── deploy/             로컬 Kubernetes 클러스터(kind)·HPA 설정, 부하·확인 스크립트
+│   └── oci/            OCI VM 배포(compose·Caddy·VM 준비·배포 스크립트), 다운로드 페이지
+├── .github/workflows/  데스크톱 설치 파일 빌드·Release
 ├── .env.example        환경변수 예시
 └── storage/videos/     업로드된 영상 저장 위치 (git 제외, 실행 시 자동 생성)
 ```
@@ -317,6 +322,142 @@
 | `GET` | `/api/health` | - | 상태 확인. DB에 닿으면 `200`(본문 없음), 닿지 않거나 2초 안에 응답이 없으면 `503` |
 
 모든 응답에 `X-Instance: <인스턴스 이름>` 헤더가 붙습니다.
+
+## 6단계: 클라우드 배포와 데스크톱 클라이언트
+
+### 구현 범위
+
+- **클라우드 배포**: OCI Always Free VM 한 대에 PostgreSQL · MediaMTX · API 서버 · Caddy를 Docker Compose로 띄웁니다(`deploy/oci/`). 방송·계정·댓글·후원 기능은 그대로입니다.
+- **도메인과 HTTPS**: 도메인의 A 레코드가 VM 공인 IP를 가리키고, Caddy가 Let's Encrypt 인증서를 자동으로 받아 갱신합니다. HTTP로 들어오면 HTTPS로 넘깁니다. 웹 앱, API(`/api`), 다운로드 페이지(`/download/`)를 모두 같은 도메인의 HTTPS로 제공합니다.
+- **배포 설정**: 서비스 주소(도메인·공인 IP)와 비밀 값(DB 비밀번호, 결제 키)은 VM의 `/opt/nadri/.env`에서만 읽습니다. 저장소에는 `deploy/oci/.env.example`만 있습니다.
+- **상태 확인**: `GET /api/health`(DB 연결 확인, 5단계)로 배포 직후 공개 주소에서 확인합니다(`deploy.sh` 마지막 단계).
+- **HTTPS 쿠키**: HTTPS 프록시를 거친 요청(`X-Forwarded-Proto: https`)이면 로그인 쿠키에 `Secure`를 붙입니다. 로컬 개발 서버(`http://localhost`)에서는 붙이지 않습니다.
+- **데스크톱 클라이언트**: Windows·macOS 앱(`desktop/`). 방송 목록을 보고 녹화 방송과 라이브를 재생합니다. 서버 호출은 앱(Rust)이 하므로 서버에 CORS를 열지 않습니다.
+- **설치 파일**: GitHub Actions가 macOS arm64·x64(`.dmg`)와 Windows x64(NSIS `-setup.exe`)를 빌드해 `desktop-v*` 태그의 Release에 올립니다.
+- **다운로드 페이지**: `/download/`에 OS별 링크, 지원 아키텍처, 설치·실행 방법을 보여 줍니다(`deploy/oci/download/index.html`).
+
+**이번 단계에서 하지 않는 것:** 데스크톱 앱의 로그인·댓글·후원·방송하기(웹에서 함), 코드 서명·공증(Apple Developer ID, Windows 인증서), 앱 자동 업데이트, VM 다중화·자동 스케일링(5단계 구성은 로컬 전용), DB 백업 자동화, Linux 데스크톱 패키지
+
+### 공개 주소
+
+| 용도 | 주소 |
+| --- | --- |
+| 웹 앱 | https://nadri.me |
+| API 상태 확인 | https://nadri.me/api/health |
+| 데스크톱 다운로드 | https://nadri.me/download/ |
+| 설치 파일 Release | https://github.com/Newtypeman-1/streaming-platform-1/releases/tag/desktop-v0.1.0 |
+
+### 도메인
+
+| 항목 | 내용 |
+| --- | --- |
+| 도메인 | `nadri.me` |
+| 등록 여부 | 등록함 (2026-11-22 등록, 2027-11-22 만료) |
+| 등록 기관 | Cloudflare Registrar (DNS도 Cloudflare) |
+| 최초 등록 비용 | US$16.56 (1년) |
+| 갱신 비용 | US$16.56 / 1년 (매년 같음) |
+
+### OCI VM
+
+| 항목 | 내용 |
+| --- | --- |
+| 홈 리전 | 일본 동부(도쿄), `ap-tokyo-1` |
+| 확인한 잔여 한도 | Compute A1 코어·메모리: 서비스 한도 "동적", 사용량 0 (계정에 다른 A1 인스턴스 없음) |
+| Shape | `VM.Standard.E2.1.Micro` (AMD, x86_64, 1/8 OCPU, 메모리 1GB) — Always Free |
+| 이미지 | Canonical Ubuntu 24.04 (x86_64) |
+| 공인 IP | `129.203.181.147` |
+| 부트 볼륨 | 기본 크기(약 47GB) |
+
+**A1이 아닌 이유:** 우선 후보는 `VM.Standard.A1.Flex` 2 OCPU·12GB였습니다. 하지만 도쿄 리전에서 A1 생성이 재고 부족(Out of capacity)으로 계속 실패해서, Always Free 범위의 다른 Shape인 `VM.Standard.E2.1.Micro`로 임시 배포했습니다.
+
+**E2.1.Micro를 쓰기 위해 바꾼 것과 제약:**
+- 메모리가 1GB라 VM 준비 때 스왑 2GB를 만듭니다. 배포 후 컨테이너 메모리는 서버 17MB, PostgreSQL 27MB, MediaMTX 31MB, Caddy 47MB 정도입니다.
+- CPU가 x86_64라 `deploy.sh`가 VM 아키텍처를 읽어 서버 이미지를 `linux/amd64`로 빌드합니다. 이 컴퓨터(arm64)에서는 에뮬레이션으로 빌드하므로 첫 빌드에 약 8분 걸렸습니다.
+- 1/8 OCPU라 동시 시청자가 많거나 큰 영상을 올리면 느립니다. 기능 시연에는 충분합니다.
+
+**A1으로 옮기려면:** A1 재고가 풀리면 같은 절차로 A1 VM을 만들고 DNS A 레코드만 새 IP로 바꿉니다. `deploy.sh`가 arm64를 알아서 고릅니다.
+
+**Ubuntu를 고른 이유:**
+- VM 준비 스크립트가 Ubuntu 기준입니다(`apt`의 `docker.io`·`docker-compose-v2`, `netfilter-persistent`, OCI Ubuntu 이미지의 기본 iptables 규칙).
+- 24.04는 LTS라 2029년까지 보안 업데이트가 나옵니다.
+- 서비스는 모두 컨테이너로 돌아서 호스트 OS는 Docker만 띄우면 됩니다.
+
+### 구성
+
+```
+사용자 브라우저 · 데스크톱 앱
+   │ https://<도메인> (443)                         │ WebRTC 영상 (8189 UDP/TCP)
+   ▼                                                ▼
+┌──────────────── OCI VM (Ubuntu, Docker Compose) ────────────────┐
+│ caddy  :80 → :443 이동, :443 HTTPS(Let's Encrypt)                │
+│   ├─ /api/*        → server:8000 (API 서버)                     │
+│   ├─ /download/    → 다운로드 페이지                              │
+│   ├─ /downloads/*  → 데스크톱 설치 파일                           │
+│   └─ 그 밖          → 웹 앱 정적 파일 (하위 경로는 index.html)     │
+│ server   ── postgres (내부망만)                                   │
+│          └─ mediamtx 신호·제어 (내부망만) ── 영상은 8189로 직접     │
+└────────────────────────────────────────────────────────────────┘
+```
+
+밖으로 여는 포트는 22(SSH), 80, 443(TCP·UDP), 8189(UDP·TCP)뿐입니다. DB, MediaMTX 제어 API, 서버 포트는 Compose 내부 네트워크에만 있습니다.
+
+### DNS·TLS 구성
+
+1. 도메인 DNS에 A 레코드를 추가합니다: 이름 `@`(루트), 값 VM 공인 IP. Cloudflare DNS라면 프록시를 끄고(**DNS only**, 회색 구름) 씁니다. WebRTC 영상(UDP)은 Cloudflare 프록시를 통과하지 못하고, 인증서는 VM의 Caddy가 직접 받기 때문입니다.
+2. 전파를 확인합니다: `dig +short <도메인> @1.1.1.1` 이 VM 공인 IP를 돌려주면 됩니다.
+3. VM에서 Caddy가 처음 뜰 때 Let's Encrypt HTTP-01 방식으로 인증서를 받습니다(80·443이 열려 있어야 함). 갱신도 Caddy가 자동으로 합니다. 인증서는 `caddy-data` 볼륨에 남아 재시작해도 다시 받지 않습니다.
+
+### 배포 환경 설정 (`/opt/nadri/.env`)
+
+| 변수 | 설명 |
+| --- | --- |
+| `NADRI_DOMAIN` | 서비스 도메인. Caddy가 이 이름으로 인증서를 받습니다 |
+| `PUBLIC_IP` | VM 공인 IP. MediaMTX가 WebRTC 접속 주소(ICE 후보)로 알려 줍니다 |
+| `POSTGRES_DB` · `POSTGRES_USER` · `POSTGRES_PASSWORD` | DB 계정. 비밀번호는 URL에 들어가므로 영문·숫자(`openssl rand -hex 24`) |
+| `TOSS_CLIENT_KEY` · `TOSS_SECRET_KEY` | 토스페이먼츠 테스트 키. 비우면 후원만 동작하지 않습니다 |
+| `SERVER_TAG` | 실행할 서버 이미지 태그. `deploy.sh`가 커밋 해시로 바꿉니다 |
+
+### 배포 절차 (재현)
+
+1. **VM 만들기**: OCI 콘솔 → 컴퓨트 → 인스턴스 → 인스턴스 생성.
+   - Shape는 `VM.Standard.A1.Flex`(2 OCPU, 12GB)이고, 재고가 없으면 `VM.Standard.E2.1.Micro`를 씁니다.
+   - 이미지는 Canonical Ubuntu 24.04입니다.
+   - 공용 서브넷에 공용 IPv4를 자동 할당하고, SSH 키 쌍을 만들어 개인 키를 저장합니다.
+2. **보안 목록**: VCN → Security List → Ingress Rules에 `0.0.0.0/0` TCP 80, TCP 443, UDP 443, UDP 8189, TCP 8189 추가.
+3. **SSH 접속 이름**: `~/.ssh/config`에 `Host nadri`(HostName=공인 IP, User=ubuntu, IdentityFile=키)를 적습니다.
+4. **VM 준비**(VM 안 iptables 허용, Docker 설치, 스왑 2GB):
+   ```bash
+   ssh nadri 'bash -s' < deploy/oci/setup-vm.sh
+   ```
+5. **환경 설정**: 예시를 올리고 VM에서 값을 채웁니다.
+   ```bash
+   scp deploy/oci/.env.example nadri:/opt/nadri/.env
+   ```
+   ```bash
+   ssh -t nadri 'chmod 600 /opt/nadri/.env && nano /opt/nadri/.env'
+   ```
+6. **DNS**: 위 "DNS·TLS 구성"대로 A 레코드를 만들고 전파를 확인합니다.
+7. **데스크톱 설치 파일**: 태그를 올리면 Actions가 빌드해 Release를 만듭니다(도메인이 `nadri.me`가 아니면 먼저 저장소 변수 `NADRI_SERVER_URL`을 `https://<도메인>`으로 설정).
+   ```bash
+   git tag desktop-v0.1.0 && git push origin desktop-v0.1.0
+   ```
+8. **배포**(서버 이미지·웹 빌드 → VM 업로드 → `docker compose up -d` → 공개 주소 상태 확인):
+   ```bash
+   VM=nadri DESKTOP_RELEASE=desktop-v0.1.0 deploy/oci/deploy.sh
+   ```
+   다시 배포할 때 설치 파일을 바꾸지 않으면 `DESKTOP_RELEASE`는 빼도 됩니다.
+
+### 데스크톱 클라이언트 개발
+
+```bash
+NADRI_SERVER_URL=http://localhost:8000 cargo run -p desktop
+```
+
+```bash
+cargo test -p desktop
+```
+
+접속할 서버는 실행할 때의 `NADRI_SERVER_URL` → 빌드할 때의 `NADRI_SERVER_URL` → `https://nadri.me` 순으로 정합니다. 설치 파일은 `desktop/`에서 `dx bundle --platform desktop --release`로 이 컴퓨터용을 만들 수 있습니다(`target/dx/nadri/bundle/`).
 
 ## 실행 방법
 
@@ -818,3 +959,76 @@ TIME     HPA-CPU      DESIRED   READY    PODS
 - **Pod 이 `Running`인데 `READY 0/1`**: DB에 닿지 않는 상태입니다. `docker compose ps`로 PostgreSQL이 떠 있는지, `kubectl logs deploy/nadri-server`로 오류를 확인합니다.
 - **`watch.sh`의 CPU가 `?`**: metrics-server가 지표를 모으는 중입니다. 1분쯤 기다립니다.
 - **부하를 `localhost:8000`으로 보내면 `dial: i/o timeout`**: 새 연결이 몰리면 Docker Desktop의 포트 전달이 따라가지 못합니다. `load.sh`처럼 kind 네트워크에서 보냅니다.
+
+## 6단계 직접 확인 절차 (클라우드 배포·데스크톱 클라이언트)
+
+외부 네트워크(예: 휴대폰 LTE 테더링, 다른 장소의 인터넷)에서 확인합니다.
+
+### A. 도메인과 HTTPS
+
+아래 항목(DNS, HTTPS 이동, 인증서, 상태 확인, 다운로드 파일)을 한 번에 확인하는 스크립트입니다.
+
+```bash
+deploy/oci/check.sh <도메인>
+```
+
+하나씩 확인하려면:
+
+```bash
+dig +short <도메인> @1.1.1.1
+```
+
+```bash
+curl -sI https://<도메인>/api/health
+```
+
+```bash
+curl -sI http://<도메인>/
+```
+
+1. `dig` 결과가 VM 공인 IP인지 봅니다.
+2. `/api/health`가 `HTTP/2 200`인지 봅니다.
+3. HTTP 주소가 `308`으로 `https://`로 넘어가는지 봅니다.
+4. 브라우저 주소창의 자물쇠에서 인증서 발급자가 Let's Encrypt인지 확인합니다.
+5. 웹에서 가입·로그인 → 녹화 방송 업로드·재생 → 댓글 → 테스트 결제 후원이 그대로 되는지 확인합니다.
+
+### B. 데스크톱 클라이언트 (Windows, macOS 각각)
+
+1. 브라우저로 `https://<도메인>/download/`를 열어 자기 OS 파일을 받습니다.
+2. 페이지의 설치 방법대로 설치하고 실행합니다(첫 실행 경고는 페이지 안내대로 허용).
+3. 앱 위쪽에 서버 주소(`https://<도메인>`)가 보이고 방송 목록이 나오는지 확인합니다.
+4. 녹화 방송을 골라 재생되는지 확인합니다.
+5. 웹(휴대폰 또는 PC 브라우저)에서 라이브를 시작한 뒤 앱에서 **새로고침** → **LIVE** 방송을 골라 재생되는지 확인합니다.
+
+### 확인한 결과
+
+**서버·HTTPS** (2026-11-22, 이 컴퓨터의 가정용 인터넷에서 `https://nadri.me`로 접속)
+- `deploy/oci/check.sh nadri.me` 10개 항목 모두 통과:
+  - DNS A `129.203.181.147`
+  - HTTP → HTTPS `308`
+  - 인증서 발급자 Let's Encrypt
+  - `/api/health`·방송 목록·웹 앱·다운로드 페이지 `200`
+  - 설치 파일 3개와 체크섬 `200`
+- 가입 `201`(쿠키에 `Secure`), 녹화 영상 업로드 `201`, 영상 Range 요청 `206`, 댓글 `201`
+- 다른 계정의 후원 주문 `201`(테스트 키, `pending`). 자기 방송 후원은 `400`으로 막힘
+- ffmpeg로 WHIP 라이브 송출 → MediaMTX에 `publishing to path 'live/2'`
+- 웹 앱 목록에 라이브·녹화 방송이 표시됨
+
+**데스크톱 클라이언트**
+
+| OS · 버전 | 아키텍처 | 받은 파일 | 설치·실행 | 목록 조회 | 녹화 재생 | 라이브 재생 |
+| --- | --- | --- | --- | --- | --- | --- |
+| macOS 27.0.1 | arm64 (Apple Silicon) | `https://nadri.me/downloads/nadri-macos-arm64.dmg` (체크섬 일치) | 디스크 이미지에서 앱 복사 후 실행 | 성공 (라이브 1·녹화 1) | 성공 (재생 시간 증가, 길이 10초) | 성공 (MediaMTX `reading from path 'live/2'`, 앱 "라이브 재생 중") |
+| macOS 27.0.1 (브라우저로 다운로드) | arm64 (Apple Silicon) | 다운로드 페이지의 Apple Silicon 디스크 이미지 | 설치·실행 성공 | 성공 | 성공 | 성공 |
+| Windows 11 64비트 | x64 | 다운로드 페이지의 `nadri-windows-x64-setup.exe` | 설치·실행 성공 | 성공 | 성공 | 성공 |
+
+- 첫 번째 macOS 줄은 명령줄로 받은 파일이라 브라우저 다운로드에 붙는 격리 표시(Gatekeeper 첫 실행 확인)를 거치지 않았습니다.
+- 두 번째 macOS 줄과 Windows 줄은 사용자가 각 컴퓨터의 브라우저로 공개 링크에서 직접 받아 설치하고 확인한 결과입니다.
+- 다운로드 페이지는 접속한 컴퓨터에 맞는 파일 하나를 강조합니다. Apple Silicon Mac의 Chrome에서 Apple Silicon 카드만 강조되는 것을 확인했습니다.
+
+### 문제 해결
+
+- **인증서를 못 받음**(Caddy 로그 `challenge failed`): DNS A 레코드가 VM 공인 IP를 가리키는지, Cloudflare 프록시가 꺼져 있는지(회색 구름), 보안 목록과 VM iptables에 80·443이 열려 있는지 확인합니다. `ssh nadri 'cd /opt/nadri && docker compose logs caddy'`
+- **라이브만 재생되지 않음**: 신호는 HTTPS로 가지만 영상은 8189로 직접 오갑니다. 보안 목록과 VM iptables에 UDP·TCP 8189가 열려 있는지, `.env`의 `PUBLIC_IP`가 실제 공인 IP인지 확인합니다.
+- **macOS에서 "손상되었기 때문에 열 수 없습니다"**: 서명하지 않은 앱이라 생기는 경고입니다. `xattr -dr com.apple.quarantine /Applications/Nadri.app` 후 다시 엽니다.
+- **Windows에서 앱 창이 비어 있음**: Microsoft Edge WebView2 런타임을 설치합니다.

@@ -358,3 +358,16 @@
 - 작업: Mac에서 접속하면 Chrome·Edge는 클라이언트 힌트의 CPU 아키텍처(`arm`/`x86`)로, Safari·Firefox는 WebGL이 알려 주는 그래픽 칩 이름(Apple M 시리즈·Apple GPU → Apple Silicon, Intel·AMD → Intel)으로 칩을 판별해 맞는 카드 하나만 강조함. 판별하지 못하면 강조하지 않고 칩 확인 방법 안내를 보게 둠
 - 이유: Mac 브라우저의 사용자 에이전트는 Apple Silicon에서도 "Intel Mac OS X"라서, 두 macOS 카드가 모두 "이 컴퓨터에 맞는 파일"로 표시되었음
 - 결과: Apple Silicon Mac(M1 Pro)의 브라우저에서 Apple Silicon 카드만 강조됨. 판별 함수에 Chrome arm·x86, Safari "Apple GPU", Firefox "Apple M2", Intel·AMD 그래픽 이름, 알 수 없는 이름을 넣어 각각 Apple Silicon·Intel·강조 없음이 나오는 것 확인
+
+
+### 006-12 docs: README 6단계 배포·데스크톱 클라이언트와 확인 결과
+- [링크](https://github.com/Newtypeman-1/streaming-platform-1/commit/006-12)
+- 작업: README에 6단계 내용 추가
+  - 구현 범위, 공개 주소(`https://nadri.me`, 다운로드 페이지, Release)
+  - 도메인 등록 정보와 비용(nadri.me, Cloudflare, 최초·갱신 US$16.56/년)
+  - OCI VM(도쿄 리전, 잔여 한도, A1 재고 부족으로 E2.1.Micro를 고른 이유와 제약, Ubuntu를 고른 이유)
+  - 구성도, DNS·TLS 구성, 배포 환경 변수, 재현 절차, 데스크톱 클라이언트 개발 방법
+  - 직접 확인 절차와 결과, 문제 해결
+  - 기술 표와 디렉터리 구조에 클라우드 배포·데스크톱 항목
+- 이유: 공개 주소와 배포 구성을 다른 사람도 같은 순서로 재현하고, 확인한 OS·아키텍처별 결과를 남기기 위함
+- 결과: 문서만 변경. 공개 주소 점검 10개 항목 통과. macOS 27.0.1(arm64)과 Windows 11 64비트(x64)에서 공개 링크로 받은 클라이언트의 설치·목록 조회·녹화·라이브 재생 성공
