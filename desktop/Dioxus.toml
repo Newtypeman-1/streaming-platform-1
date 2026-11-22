@@ -6,3 +6,8 @@ identifier = "live.nadri.desktop"
 publisher = "nadri"
 category = "Video"
 short_description = "나드리 방송 시청"
+
+# 화면 표시에 쓰는 WebView2 런타임: 설치 파일에는 작은 부트스트래퍼만 넣고, PC에 런타임이 없을 때만 설치 중에 내려받는다.
+# (기본값은 오프라인 설치 파일 전체를 넣어 설치 파일이 250MB 넘게 커진다)
+[bundle.windows]
+webview_install_mode = { EmbedBootstrapper = { silent = true } }

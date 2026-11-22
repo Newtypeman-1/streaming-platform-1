@@ -330,3 +330,10 @@
 - 작업: `deploy/oci/check.sh <도메인>` 추가. DNS A 레코드, HTTP → HTTPS 이동(`308`), 인증서 발급자(Let's Encrypt), `/api/health`·방송 목록·웹 앱·다운로드 페이지·설치 파일 3개와 체크섬 응답을 확인하고 하나라도 실패하면 종료 코드 1
 - 이유: 배포 뒤 외부 네트워크에서 도메인·HTTPS·다운로드를 같은 기준으로 반복해 확인하기 위함
 - 결과: 다른 공개 사이트로 실행해 실패 항목을 `FAIL`로 표시하고 종료 코드 1로 끝나는 것 확인
+
+
+### 006-08 fix: Windows 설치 파일에 WebView2 부트스트래퍼만 넣음
+- [링크](https://github.com/Newtypeman-1/streaming-platform-1/commit/006-08)
+- 작업: `desktop/Dioxus.toml`에 `webview_install_mode = EmbedBootstrapper`(조용히 설치) 지정. 다운로드 페이지의 Windows 설치 안내를 이 동작에 맞춤
+- 이유: 기본 설정이 WebView2 오프라인 설치 파일 전체를 넣어 Windows 설치 파일이 252MB였음(macOS는 4.4MB). 대부분의 Windows 10·11에는 런타임이 이미 있으므로 없을 때만 설치 중에 내려받게 함
+- 결과: GitHub Actions에서 세 환경 모두 빌드 성공. Windows 설치 파일 252MB → 5.1MB, macOS arm64 4.4MB · x64 4.7MB
