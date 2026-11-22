@@ -61,16 +61,27 @@ window.live = (() => {
     // 카메라·마이크를 켜서 videoId 요소에 미리보기를 띄운다. facing: 'user'(전면) | 'environment'(후면)
     async startPreview(videoId, facing) {
       if (!navigator.mediaDevices || !window.isSecureContext) throw new Error(cameraError());
+      const open = (f) => navigator.mediaDevices.getUserMedia({
+        video: { facingMode: f, width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: { echoCancellation: true, noiseSuppression: true },
+      });
+      // 휴대폰은 카메라를 한 번에 하나만 열 수 있어서, 켜져 있는 카메라를 먼저 꺼야 다른 카메라가 열린다
+      const previous = preview && preview.facing;
+      this.stopPreview();
       let stream;
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } },
-          audio: { echoCancellation: true, noiseSuppression: true },
-        });
+        stream = await open(facing);
       } catch (e) {
+        // 바꾸려던 카메라가 안 열리면 원래 카메라로 되돌려 미리보기가 꺼진 채로 남지 않게 한다
+        if (previous) {
+          try {
+            const back = await open(previous);
+            preview = { stream: back, facing: previous };
+            document.getElementById(videoId).srcObject = back;
+          } catch (_) {}
+        }
         throw new Error(cameraError(e));
       }
-      stopTracks(preview && preview.stream);
       preview = { stream, facing };
       const video = document.getElementById(videoId);
       video.srcObject = stream;
