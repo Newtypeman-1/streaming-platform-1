@@ -1,0 +1,8 @@
+[application]
+name = "nadri"
+
+[bundle]
+identifier = "live.nadri.desktop"
+publisher = "nadri"
+category = "Video"
+short_description = "나드리 방송 시청"

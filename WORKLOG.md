@@ -304,3 +304,12 @@
 - 작업: 데스크톱 앱 방송 목록의 각 항목을 클릭 가능한 목록 줄에서 버튼으로 바꿈. 모양은 그대로 유지
 - 이유: 목록 줄은 마우스로만 고를 수 있어 키보드(Tab·Enter)나 화면 낭독기 같은 보조기기에서 방송을 고를 수 없었음
 - 결과: macOS 접근성 트리에서 방송 항목이 버튼(이름: 상태·제목·방송한 사람·시각)으로 보이고, 접근성 동작으로 눌러 라이브·녹화 재생 확인. API 테스트 8개 통과
+
+
+### 006-05 build: 데스크톱 클라이언트 OS별 설치 파일 빌드
+- [링크](https://github.com/Newtypeman-1/streaming-platform-1/commit/006-05)
+- 작업
+  - `desktop/Dioxus.toml`: 번들 식별자(`live.nadri.desktop`)·게시자·분류. 실행 파일 이름을 `nadri`로 정해 앱 이름이 `Nadri.app`·`nadri.exe`가 되게 함
+  - `.github/workflows/desktop.yml`: macOS arm64·macOS x64(`.dmg`), Windows x64(NSIS `-setup.exe`)를 빌드. Windows·macOS arm64에서는 클라이언트 테스트도 실행. `desktop-v*` 태그를 올리면 설치 파일과 `SHA256SUMS.txt`를 GitHub Release로 올림. 접속할 서버 주소는 저장소 변수 `NADRI_SERVER_URL`로 바꿀 수 있음
+- 이유: Windows 설치 파일은 이 컴퓨터(macOS)에서 만들 수 없어 OS별 빌드 환경에서 만들고, 다운로드 페이지가 받을 수 있는 고정된 파일 이름과 위치(Release)가 필요함
+- 결과: 이 컴퓨터에서 `dx bundle`로 `Nadri_0.1.0_aarch64.dmg`(4.3MB)와 `Nadri_0.1.0_x86_64.dmg` 생성. arm64 앱을 실행해 방송 목록 조회, 라이브(연속 2회)·녹화 재생 확인. 워크플로 문법은 actionlint로 검사

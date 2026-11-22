@@ -13,3 +13,8 @@ reqwest = { version = "0.13.5", default-features = false, features = ["json", "r
 [dev-dependencies]
 axum = "0.8"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
+
+# 설치 파일·앱 이름이 실행 파일 이름을 따른다 (Nadri.app, nadri.exe)
+[[bin]]
+name = "nadri"
+path = "src/main.rs"
