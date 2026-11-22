@@ -133,3 +133,30 @@ async fn 로그아웃은_다른_기기의_세션에_영향이_없다() {
     let (status, _, _) = app.send(with_cookie(get("/api/auth/me"), &second)).await;
     assert_eq!(status, StatusCode::OK);
 }
+
+/// HTTPS 를 끝내는 프록시(Caddy)가 붙여 주는 헤더
+fn via_https(mut req: axum::http::Request<axum::body::Body>) -> axum::http::Request<axum::body::Body> {
+    req.headers_mut().insert("x-forwarded-proto", "https".parse().unwrap());
+    req
+}
+
+#[tokio::test]
+async fn https_로_접속하면_세션_쿠키는_https_에서만_보내진다() {
+    let app = app().await;
+
+    let (status, headers, _) = app.send(via_https(signup("alice", PASSWORD))).await;
+
+    assert_eq!(status, StatusCode::CREATED);
+    let set_cookie = headers[header::SET_COOKIE].to_str().unwrap();
+    assert!(set_cookie.contains("; Secure"), "{set_cookie}");
+}
+
+#[tokio::test]
+async fn 프록시_없이_http_로_접속하면_세션_쿠키에_secure_를_붙이지_않는다() {
+    let app = app().await;
+
+    let (_, headers, _) = app.send(signup("alice", PASSWORD)).await;
+
+    let set_cookie = headers[header::SET_COOKIE].to_str().unwrap();
+    assert!(!set_cookie.contains("Secure"), "개발 서버(http://localhost)에서도 로그인할 수 있어야 한다: {set_cookie}");
+}

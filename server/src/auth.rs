@@ -83,8 +83,10 @@ pub fn session_token_from_cookie(cookie_header: &str) -> Option<&str> {
 }
 
 /// 로그인 쿠키. JS 에서 읽을 수 없고(HttpOnly), 다른 사이트에서 보낸 POST 에는 실리지 않는다(SameSite=Lax).
-pub fn session_cookie(token: &str) -> String {
-    format!("{SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}", SESSION_DAYS * 24 * 60 * 60)
+/// HTTPS 로 접속했으면 HTTPS 요청에만 실린다(Secure).
+pub fn session_cookie(token: &str, secure: bool) -> String {
+    let secure = if secure { "; Secure" } else { "" };
+    format!("{SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}{secure}", SESSION_DAYS * 24 * 60 * 60)
 }
 
 pub fn expired_session_cookie() -> String {

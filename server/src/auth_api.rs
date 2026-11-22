@@ -51,8 +51,18 @@ fn session_token(headers: &HeaderMap) -> Option<&str> {
     headers.get_all(header::COOKIE).iter().filter_map(|v| v.to_str().ok()).find_map(session_token_from_cookie)
 }
 
+/// 앞단의 HTTPS 프록시가 알려 준 접속 방식. 프록시 없이 받은 요청(개발 환경)은 HTTP 로 본다.
+fn via_https(headers: &HeaderMap) -> bool {
+    headers.get("x-forwarded-proto").is_some_and(|v| v.as_bytes().eq_ignore_ascii_case(b"https"))
+}
+
 /// 새 세션을 만들고 사용자 정보와 로그인 쿠키를 응답한다.
-async fn logged_in(state: &AppState, status: StatusCode, user: user::Model) -> Result<Response, AppError> {
+async fn logged_in(
+    state: &AppState,
+    headers: &HeaderMap,
+    status: StatusCode,
+    user: user::Model,
+) -> Result<Response, AppError> {
     let token = new_session_token();
     let now = Utc::now();
     session::ActiveModel {
@@ -64,7 +74,7 @@ async fn logged_in(state: &AppState, status: StatusCode, user: user::Model) -> R
     }
     .insert(&state.db)
     .await?;
-    Ok((status, [(header::SET_COOKIE, session_cookie(&token))], Json(UserResponse::from(user))).into_response())
+    Ok((status, [(header::SET_COOKIE, session_cookie(&token, via_https(headers)))], Json(UserResponse::from(user))).into_response())
 }
 
 /// Argon2 는 일부러 느리게 만든 계산이라 비동기 작업 스레드를 막지 않도록 따로 돌린다.
@@ -72,7 +82,11 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> 
     tokio::task::spawn_blocking(f).await.map_err(|e| AppError::Internal(e.to_string()))
 }
 
-async fn signup(State(state): State<AppState>, JsonBody(req): JsonBody<Credentials>) -> Result<Response, AppError> {
+async fn signup(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    JsonBody(req): JsonBody<Credentials>,
+) -> Result<Response, AppError> {
     let username = normalize_username(&req.username)?;
     validate_password(&req.password)?;
     let password_hash = blocking(move || hash_password(&req.password)).await?;
@@ -91,10 +105,14 @@ async fn signup(State(state): State<AppState>, JsonBody(req): JsonBody<Credentia
         }
         result => result?,
     };
-    logged_in(&state, StatusCode::CREATED, user).await
+    logged_in(&state, &headers, StatusCode::CREATED, user).await
 }
 
-async fn login(State(state): State<AppState>, JsonBody(req): JsonBody<Credentials>) -> Result<Response, AppError> {
+async fn login(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    JsonBody(req): JsonBody<Credentials>,
+) -> Result<Response, AppError> {
     // 형식이 틀린 아이디도 "없는 아이디"와 같은 응답을 준다
     let found = match normalize_username(&req.username) {
         Ok(username) => user::Entity::find().filter(user::Column::Username.eq(username)).one(&state.db).await?,
@@ -107,7 +125,7 @@ async fn login(State(state): State<AppState>, JsonBody(req): JsonBody<Credential
     if !blocking(move || verify_password(&req.password, &hash)).await? {
         return Err(AuthError::WrongCredentials.into());
     }
-    logged_in(&state, StatusCode::OK, user).await
+    logged_in(&state, &headers, StatusCode::OK, user).await
 }
 
 /// 이 세션만 지운다(다른 기기의 로그인은 그대로). 로그인하지 않은 상태로 불러도 204.
