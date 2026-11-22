@@ -1,7 +1,7 @@
 # 데스크톱 클라이언트 설치 파일을 OS별로 빌드한다.
 # desktop-v* 태그를 올리면 GitHub Release 를 만들어 설치 파일을 붙인다(다운로드 페이지가 이 파일을 내려준다).
 # 수동 실행(workflow_dispatch)은 빌드만 하고 결과를 Actions 아티팩트로 남긴다.
-# 접속할 서버 주소는 저장소 변수 NADRI_SERVER_URL 로 바꿀 수 있다(없으면 https://nadri.live).
+# 접속할 서버 주소는 저장소 변수 NADRI_SERVER_URL 로 바꿀 수 있다(없으면 https://nadri.me).
 name: desktop
 
 on:
@@ -92,4 +92,4 @@ jobs:
             --notes "macOS(Apple Silicon·Intel)와 Windows(x64) 설치 파일입니다. 설치 방법은 ${SERVICE_URL}/download/ 를 보세요."
         env:
           GH_TOKEN: ${{ github.token }}
-          SERVICE_URL: ${{ vars.NADRI_SERVER_URL || 'https://nadri.live' }}
+          SERVICE_URL: ${{ vars.NADRI_SERVER_URL || 'https://nadri.me' }}

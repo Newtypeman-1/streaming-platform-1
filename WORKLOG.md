@@ -337,3 +337,10 @@
 - 작업: `desktop/Dioxus.toml`에 `webview_install_mode = EmbedBootstrapper`(조용히 설치) 지정. 다운로드 페이지의 Windows 설치 안내를 이 동작에 맞춤
 - 이유: 기본 설정이 WebView2 오프라인 설치 파일 전체를 넣어 Windows 설치 파일이 252MB였음(macOS는 4.4MB). 대부분의 Windows 10·11에는 런타임이 이미 있으므로 없을 때만 설치 중에 내려받게 함
 - 결과: GitHub Actions에서 세 환경 모두 빌드 성공. Windows 설치 파일 252MB → 5.1MB, macOS arm64 4.4MB · x64 4.7MB
+
+
+### 006-09 fix: 서비스 도메인을 nadri.me 로 맞춤
+- [링크](https://github.com/Newtypeman-1/streaming-platform-1/commit/006-09)
+- 작업: 데스크톱 앱의 기본 서버 주소를 `https://nadri.me`로 바꿈. 배포 환경 예시(`NADRI_DOMAIN`), 설치 파일 Release 안내 주소, 점검 스크립트 예시도 같은 도메인으로 맞춤
+- 이유: 실제로 등록한 도메인이 `nadri.me`(Cloudflare Registrar)라 설치 파일을 받은 앱이 다른 주소로 접속하지 않게 하기 위함
+- 결과: 클라이언트 API 테스트 8개 통과

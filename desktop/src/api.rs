@@ -4,7 +4,7 @@ use serde::de::DeserializeOwned;
 use shared::{BroadcastResponse, ErrorResponse};
 
 /// 배포한 서비스 주소
-pub const DEFAULT_SERVER_URL: &str = "https://nadri.live";
+pub const DEFAULT_SERVER_URL: &str = "https://nadri.me";
 
 /// 접속할 서버 주소. 실행할 때 준 `NADRI_SERVER_URL` → 빌드할 때 준 `NADRI_SERVER_URL` → 기본값 순.
 pub fn server_url(runtime: Option<&str>, built: Option<&str>) -> String {

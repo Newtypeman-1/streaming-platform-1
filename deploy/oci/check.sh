@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 공개 주소를 바깥에서 점검한다: DNS, HTTP→HTTPS 이동, 인증서, 상태 확인, 방송 목록, 다운로드 페이지와 설치 파일.
-#   deploy/oci/check.sh nadri.live
+#   deploy/oci/check.sh nadri.me
 # 모두 통과하면 0, 하나라도 실패하면 1 로 끝난다.
 set -uo pipefail
 
