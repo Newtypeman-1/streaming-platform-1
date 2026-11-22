@@ -112,14 +112,42 @@
   </ul>
 </main>
 <script>
-  // 접속한 OS 에 맞는 파일을 강조한다 (Mac 의 칩 종류는 브라우저가 알려주지 않으므로 Mac 은 둘 다 강조)
+  // 접속한 컴퓨터에 맞는 파일 하나를 강조한다.
+  // Mac 은 사용자 에이전트가 Intel·Apple Silicon 모두 "Intel Mac OS X" 라서 칩을 따로 알아낸다:
+  //   1) Chrome·Edge: 클라이언트 힌트의 CPU 아키텍처 (arm / x86)
+  //   2) Safari·Firefox: WebGL 이 알려 주는 그래픽 칩 이름 (Apple M1 등 → Apple Silicon, Intel·AMD → Intel)
+  //   알아내지 못하면 아무것도 강조하지 않는다(칩 확인 방법 안내를 본다).
+  function macChip(architecture, renderer) {
+    if (architecture === 'arm') return 'mac-arm';
+    if (architecture === 'x86') return 'mac-intel';
+    if (/Apple (M\d|GPU)/i.test(renderer || '')) return 'mac-arm';
+    if (/Intel|AMD|Radeon|NVIDIA/i.test(renderer || '')) return 'mac-intel';
+    return null;
+  }
+
+  function webglRenderer() {
+    try {
+      var gl = document.createElement('canvas').getContext('webgl');
+      var info = gl && gl.getExtension('WEBGL_debug_renderer_info');
+      return gl ? gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER) : '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function recommend(name) {
+    var card = name && document.querySelector('[data-os="' + name + '"]');
+    if (card) card.classList.add('recommended');
+  }
+
   (function () {
     var ua = navigator.userAgent;
-    var os = /Windows/.test(ua) ? ['windows'] : /Macintosh|Mac OS X/.test(ua) ? ['mac-arm', 'mac-intel'] : [];
-    os.forEach(function (name) {
-      var card = document.querySelector('[data-os="' + name + '"]');
-      if (card) card.classList.add('recommended');
-    });
+    if (/Windows/.test(ua)) return recommend('windows');
+    if (!/Macintosh|Mac OS X/.test(ua)) return;
+    var hints = navigator.userAgentData && navigator.userAgentData.getHighEntropyValues;
+    var arch = hints ? navigator.userAgentData.getHighEntropyValues(['architecture']).then(function (v) { return v.architecture; }, function () { return ''; })
+                     : Promise.resolve('');
+    arch.then(function (a) { recommend(macChip(a, webglRenderer())); });
   })();
 </script>
 </body>

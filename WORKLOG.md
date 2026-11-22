@@ -351,3 +351,10 @@
 - 작업: `setup-vm.sh`에 스왑 2GB(재부팅 후에도 유지) 추가. `deploy.sh`가 VM의 CPU 아키텍처(`dpkg --print-architecture`)를 읽어 서버 이미지를 `linux/amd64` 또는 `linux/arm64`로 빌드
 - 이유: 도쿄 리전에 A1(arm64) 재고가 없어 무료 대안 `VM.Standard.E2.1.Micro`(x86_64, 메모리 1GB)를 씀. 메모리가 작아 DB·미디어 서버·API·Caddy가 함께 뜰 때 메모리 부족이 생길 수 있고, 이미지 아키텍처가 맞지 않으면 실행되지 않음. 나중에 A1으로 옮겨도 스크립트를 고치지 않아도 됨
 - 결과: VM(Ubuntu 24.04.5, x86_64, 952MB)에서 `setup-vm.sh` 실행 → Docker 29.1·Compose 2.40 설치, 스왑 2047MB, iptables에 80·443(TCP·UDP)·8189(TCP·UDP) 허용 후 저장. 외부에서 TCP 80·443·8189 응답, UDP 443·8189 도달 확인. 이 컴퓨터에서 `linux/amd64` 서버 이미지 빌드 성공(39MB)
+
+
+### 006-11 fix: 다운로드 페이지가 Mac 의 칩에 맞는 파일 하나만 강조함
+- [링크](https://github.com/Newtypeman-1/streaming-platform-1/commit/006-11)
+- 작업: Mac에서 접속하면 Chrome·Edge는 클라이언트 힌트의 CPU 아키텍처(`arm`/`x86`)로, Safari·Firefox는 WebGL이 알려 주는 그래픽 칩 이름(Apple M 시리즈·Apple GPU → Apple Silicon, Intel·AMD → Intel)으로 칩을 판별해 맞는 카드 하나만 강조함. 판별하지 못하면 강조하지 않고 칩 확인 방법 안내를 보게 둠
+- 이유: Mac 브라우저의 사용자 에이전트는 Apple Silicon에서도 "Intel Mac OS X"라서, 두 macOS 카드가 모두 "이 컴퓨터에 맞는 파일"로 표시되었음
+- 결과: Apple Silicon Mac(M1 Pro)의 브라우저에서 Apple Silicon 카드만 강조됨. 판별 함수에 Chrome arm·x86, Safari "Apple GPU", Firefox "Apple M2", Intel·AMD 그래픽 이름, 알 수 없는 이름을 넣어 각각 Apple Silicon·Intel·강조 없음이 나오는 것 확인
