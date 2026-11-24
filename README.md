@@ -812,7 +812,7 @@ code -b owner.txt $API/api/auth/me
 후원 상태는 DB에서 직접 확인할 수 있습니다. 아래 명령을 "상태 확인"이라고 부릅니다.
 
 ```bash
-docker exec streaming-platform-postgres psql -U streaming -d streaming \
+docker exec nadri-1-postgres psql -U streaming -d streaming \
   -c "select id, order_id, amount, status, payment_key, failure, approved_at from donation order by id desc limit 5"
 ```
 

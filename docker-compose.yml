@@ -1,7 +1,9 @@
+name: nadri-1
+
 services:
   postgres:
     image: postgres:17
-    container_name: streaming-platform-postgres
+    container_name: nadri-1-postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -14,7 +16,7 @@ services:
   # 라이브 영상 중계 서버 (WebRTC WHIP 송출 / WHEP 시청)
   mediamtx:
     image: bluenviron/mediamtx:1.21.4
-    container_name: streaming-platform-mediamtx
+    container_name: nadri-1-mediamtx
     environment:
       # 브라우저가 영상을 주고받을 때 접속할 이 컴퓨터의 주소 (ICE 후보)
       MTX_WEBRTCADDITIONALHOSTS: 127.0.0.1,${PUBLIC_HOST:-127.0.0.1}
@@ -30,7 +32,7 @@ services:
   # docker compose --profile phone up -d 로 켠다.
   https:
     image: caddy:2
-    container_name: streaming-platform-https
+    container_name: nadri-1-https
     profiles: [phone]
     environment:
       PUBLIC_HOST: ${PUBLIC_HOST:-127.0.0.1}

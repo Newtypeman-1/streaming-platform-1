@@ -392,3 +392,10 @@
 - 작업: `deploy.sh`가 웹 앱을 빌드하기 전에 빌드 결과 디렉터리를 비움
 - 이유: dx는 빌드 결과 디렉터리에 예전 빌드의 해시 이름 파일(js·wasm)을 남겨 두어, 배포할 때마다 쓰지 않는 파일이 VM에 쌓였음
 - 결과: 재배포 후 VM의 웹 앱 파일이 8개에서 현재 빌드의 5개로 줄어듦. 공개 주소 점검 10개 항목 통과, 기존 방송 데이터 유지
+
+
+### 006-16 chore: 로컬 개발 컨테이너 이름을 nadri-1 로 정리
+- [링크](https://github.com/Newtypeman-1/streaming-platform-1/commit/006-16)
+- 작업: `docker-compose.yml`에 프로젝트 이름 `nadri-1`을 지정하고 컨테이너 이름을 `nadri-1-postgres`·`nadri-1-mediamtx`·`nadri-1-https`로 바꿈. README의 DB 확인 명령도 같은 이름으로 맞춤
+- 이유: 프로젝트 이름이 폴더 이름(`twitch-copy`)에서 자동으로 정해지고 컨테이너는 옛 이름(`streaming-platform-*`)이라, 서비스 이름(나드리)과 맞지 않고 Docker 화면에서 알아보기 어려웠음
+- 결과: 기존 개발 DB 볼륨을 `nadri-1_postgres-data`로 옮겨 `nadri-1-postgres`로 띄우고 사용자 7·방송 13·댓글 2건이 그대로인 것 확인
